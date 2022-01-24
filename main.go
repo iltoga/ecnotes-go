@@ -5,12 +5,40 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/iltoga/ecnotes-go/service"
+	"github.com/iltoga/ecnotes-go/ui"
 )
+
+var (
+	configService service.ConfigService
+)
+
+func init() {
+	configService = service.NewConfigService()
+	if err := configService.LoadConfig(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+}
 
 func main() {
 	SetupCloseHandler()
 
-	CreateMainWindow()
+	ui.CreateMainWindow()
+
+	// TODO: move to service (config validation)
+	keyFile, err := configService.GetConfig("file_key")
+	if err != nil {
+		fmt.Println(err)
+	}
+	crtFile, err := configService.GetConfig("file_crt")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	fmt.Println("key file:", keyFile)
+	fmt.Println("cert file:", crtFile)
 	// infinite loop to keep the program running
 	for {
 		select {}
