@@ -12,6 +12,7 @@ const (
 	configFileDefPath = "./resources"
 )
 
+// ConfigService ....
 type ConfigService interface {
 	GetConfig(key string) (string, error)
 	SetConfig(key string, value string) error
