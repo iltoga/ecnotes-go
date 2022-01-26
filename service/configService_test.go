@@ -24,8 +24,8 @@ crt_file = "./main.crt"
 key_file = "./main.key"
 `)
 
-	s.suite.mockConfig = config
-	s.suite.configService = service.NewConfigService()
+	s.mockConfig = config
+	s.configService = service.NewConfigService()
 	s.configService.ParseConfigTree(config)
 	fileCrt, _ := s.configService.GetConfig("crt_file")
 	assert.Equal(t, "./main.crt", fileCrt)

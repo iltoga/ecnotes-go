@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	CONFIG_FILE_DEF_PATH = "./resources"
+	configFileDefPath = "./resources"
 )
 
 type ConfigService interface {
@@ -20,12 +20,14 @@ type ConfigService interface {
 	SaveConfig() error
 }
 
+// ConfigServiceImpl ....
 type ConfigServiceImpl struct {
 	config map[string]string
 	loaded bool
 	mutex  *sync.Mutex
 }
 
+// NewConfigService ....
 func NewConfigService() ConfigService {
 	return &ConfigServiceImpl{
 		config: make(map[string]string),
@@ -34,6 +36,7 @@ func NewConfigService() ConfigService {
 	}
 }
 
+// GetConfig ....
 func (c *ConfigServiceImpl) GetConfig(key string) (string, error) {
 	if !c.loaded {
 		err := c.LoadConfig()
@@ -44,6 +47,7 @@ func (c *ConfigServiceImpl) GetConfig(key string) (string, error) {
 	return c.config[key], nil
 }
 
+// SetConfig ....
 func (c *ConfigServiceImpl) SetConfig(key string, value string) error {
 	if !c.loaded {
 		err := c.LoadConfig()
@@ -57,6 +61,7 @@ func (c *ConfigServiceImpl) SetConfig(key string, value string) error {
 	return nil
 }
 
+// ParseConfigTree ....
 func (c *ConfigServiceImpl) ParseConfigTree(configTree *toml.Tree) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -70,10 +75,9 @@ func (c *ConfigServiceImpl) ParseConfigTree(configTree *toml.Tree) {
  *
  * This function is thread safe.
  */
+// LoadConfig ....
 func (c *ConfigServiceImpl) LoadConfig() error {
-	var (
-		configTree, err = toml.LoadFile(filepath.Join(CONFIG_FILE_DEF_PATH, "config.toml"))
-	)
+	configTree, err := toml.LoadFile(filepath.Join(configFileDefPath, "config.toml"))
 	if err != nil {
 		return err
 	}
@@ -82,14 +86,15 @@ func (c *ConfigServiceImpl) LoadConfig() error {
 	return nil
 }
 
+// SaveConfig ....
 func (c *ConfigServiceImpl) SaveConfig() error {
-	if f, err := os.Create("config.toml"); err != nil {
+	f, err := os.Create("config.toml")
+	if err != nil {
 		return err
-	} else {
-		defer f.Close()
-		if err := toml.NewEncoder(f).Encode(c.config); err != nil {
-			return err
-		}
+	}
+	defer f.Close()
+	if err := toml.NewEncoder(f).Encode(c.config); err != nil {
+		return err
 	}
 	return nil
 }

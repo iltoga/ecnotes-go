@@ -10,9 +10,7 @@ import (
 	"github.com/iltoga/ecnotes-go/ui"
 )
 
-var (
-	configService service.ConfigService
-)
+var configService service.ConfigService
 
 func init() {
 	configService = service.NewConfigService()
@@ -54,11 +52,11 @@ func SetupCloseHandler() {
 	go func() {
 		<-c
 		fmt.Println("\r- Ctrl+C pressed in Terminal")
-		Cleanup()
+		cleanup()
 		os.Exit(0)
 	}()
 }
 
-func Cleanup() {
+func cleanup() {
 	fmt.Println("Cleanup")
 }
