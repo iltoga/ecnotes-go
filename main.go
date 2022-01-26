@@ -7,7 +7,6 @@ import (
 	"syscall"
 
 	"github.com/iltoga/ecnotes-go/service"
-	"github.com/iltoga/ecnotes-go/ui"
 )
 
 var configService service.ConfigService
@@ -23,7 +22,7 @@ func init() {
 func main() {
 	SetupCloseHandler()
 
-	ui.CreateMainWindow()
+	// ui.CreateMainWindow()
 
 	// TODO: move to service (config validation)
 	keyFile, err := configService.GetConfig("file_key")
