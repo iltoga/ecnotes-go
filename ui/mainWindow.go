@@ -74,12 +74,12 @@ func (ui *UImpl) CreateMainWindow() {
 	if _, err := ui.confSrv.GetConfig("encryption_key"); err == nil {
 		w.SetContent(container.NewVBox(
 			widget.NewLabel("Decrypting..."),
-			ui.runPasswordPopUp(w, common.EncryptionKey_Decrypt),
+			ui.runPasswordPopUp(w, common.EncryptionKeyAction_Decrypt),
 		))
 	} else {
 		w.SetContent(container.NewVBox(
 			widget.NewLabel("Generating encryption key..."),
-			ui.runPasswordPopUp(w, common.EncryptionKey_Generate),
+			ui.runPasswordPopUp(w, common.EncryptionKeyAction_Generate),
 		))
 	}
 
@@ -98,16 +98,16 @@ func (ui *UImpl) runPasswordPopUp(w fyne.Window, keyAction common.EncryptionKeyA
 		btnWg          = widget.NewButton("OK", func() {
 			// generate encryption key, encrypt with password and save to file
 			switch keyAction {
-			case common.EncryptionKey_Generate:
+			case common.EncryptionKeyAction_Generate:
 				// generate encryption key
-				encKey, err := cryptoUtil.SecureRandomStr(32)
+				decKey, err = cryptoUtil.SecureRandomStr(common.EncryptionKeyLength)
 				if err != nil {
 					ui.showNotification("Error generating encryption key", err.Error())
 					return
 				}
-				ui.confSrv.SetGlobal("encryption_key", encKey)
+				ui.confSrv.SetGlobal("encryption_key", decKey)
 				// encrypt the key with password input in the password entry
-				if decKey, err = cryptoUtil.EncryptWithPassword(encKey, pwdWg.Text); err != nil {
+				if encKey, err = cryptoUtil.EncryptWithPassword(decKey, pwdWg.Text); err != nil {
 					ui.showNotification("Error encrypting encryption key", err.Error())
 					return
 				}
@@ -118,14 +118,14 @@ func (ui *UImpl) runPasswordPopUp(w fyne.Window, keyAction common.EncryptionKeyA
 					return
 				}
 				ui.showNotification("Encryption key generated", "")
-			case common.EncryptionKey_Decrypt:
+			case common.EncryptionKeyAction_Decrypt:
 				// decrypt the key with password input in the password entry
 				if encKey, err = ui.confSrv.GetConfig("encryption_key"); err != nil {
-					ui.showNotification("Error loading encryption key from configuration file", err.Error())
+					ui.showNotification("Error loading encryption key from app configuration", err.Error())
 					return
 				}
 				if decKey, err = cryptoUtil.DecryptWithPassword(encKey, pwdWg.Text); err != nil {
-					ui.showNotification("Error decrypting encryption key loaded from configuration file", err.Error())
+					ui.showNotification("Error decrypting encryption key", err.Error())
 					return
 				}
 				ui.confSrv.SetGlobal("encryption_key", decKey)
@@ -140,7 +140,7 @@ func (ui *UImpl) runPasswordPopUp(w fyne.Window, keyAction common.EncryptionKeyA
 		})
 	)
 
-	if keyAction == common.EncryptionKey_Decrypt {
+	if keyAction == common.EncryptionKeyAction_Decrypt {
 		btnWg.SetText("Enter password to Decrypt Key")
 	} else {
 		btnWg.SetText("Enter password to Encrypt generated Key")

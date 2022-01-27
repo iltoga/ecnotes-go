@@ -4,13 +4,12 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/base64"
-	"errors"
+	"encoding/hex"
+	"fmt"
 	"io"
 )
 
 // EncryptWithPassword encrypts a message using a password
-// The message is encrypted using AES-256-CFB
 func EncryptWithPassword(message string, password string) (encmess string, err error) {
 	// hash the password with SHA256 (just to make some noise)
 	key := Hash(password)
@@ -24,58 +23,70 @@ func DecryptWithPassword(message string, password string) (encmess string, err e
 	return DecryptAES256(key, message)
 }
 
-// EncryptAES256 encrypts a message using AES-256-CFB
+// EncryptAES256 encrypts a message using AES-256-GCM
 //  key is the encryption key (must be 32 bytes)
 //  message is the string to be encrypted
 //  returns the (b64 encoded) encrypted message, or an error if the key is not 32 bytes
 func EncryptAES256(key []byte, message string) (encmess string, err error) {
-	plainText := []byte(message)
+	plaintext := []byte(message)
 
+	//Create a new Cipher Block from the key
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return
 	}
 
-	// IV needs to be unique, but doesn't have to be secure.
-	// It's common to put it at the beginning of the ciphertext.
-	cipherText := make([]byte, aes.BlockSize+len(plainText))
-	iv := cipherText[:aes.BlockSize]
-	if _, err = io.ReadFull(rand.Reader, iv); err != nil {
+	//Create a new GCM - https://en.wikipedia.org/wiki/Galois/Counter_Mode
+	//https://golang.org/pkg/crypto/cipher/#NewGCM
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
 		return
 	}
 
-	stream := cipher.NewCFBEncrypter(block, iv)
-	stream.XORKeyStream(cipherText[aes.BlockSize:], plainText)
+	//Create a nonce. Nonce should be from GCM
+	nonce := make([]byte, aesGCM.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		return
+	}
 
+	//Encrypt the data using aesGCM.Seal
+	//Since we don't want to save the nonce somewhere else in this case, we add it as a prefix to the encrypted data. The first nonce argument in Seal is the prefix.
+	ciphertext := aesGCM.Seal(nonce, nonce, plaintext, nil)
 	// returns to base64 encoded string
-	encmess = base64.URLEncoding.EncodeToString(cipherText)
+	encmess = fmt.Sprintf("%x", ciphertext)
 	return
 }
 
 // DecryptAES256 ....
 func DecryptAES256(key []byte, securemess string) (decodedmess string, err error) {
-	cipherText, err := base64.URLEncoding.DecodeString(securemess)
+	enc, err := hex.DecodeString(securemess)
 	if err != nil {
-		return
+		return "", err
 	}
 
+	//Create a new Cipher Block from the key
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return
 	}
 
-	if len(cipherText) < aes.BlockSize {
-		err = errors.New("ciphertext block size is too short")
+	//Create a new GCM
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
 		return
 	}
 
-	iv := cipherText[:aes.BlockSize]
-	cipherText = cipherText[aes.BlockSize:]
+	//Get the nonce size
+	nonceSize := aesGCM.NonceSize()
 
-	stream := cipher.NewCFBDecrypter(block, iv)
-	// XORKeyStream can work in-place if the two arguments are the same.
-	stream.XORKeyStream(cipherText, cipherText)
+	//Extract the nonce from the encrypted data
+	nonce, ciphertext := enc[:nonceSize], enc[nonceSize:]
 
-	decodedmess = string(cipherText)
+	//Decrypt the data
+	plaintext, err := aesGCM.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return
+	}
+	decodedmess = fmt.Sprintf("%s", plaintext)
 	return
 }
