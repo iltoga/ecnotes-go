@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -9,13 +10,13 @@ import (
 )
 
 const (
-	configFileDefPath = "./resources"
+	defaultResourcePath = "./resources"
 )
 
 // ConfigService ....
 type ConfigService interface {
 	GetGlobal(key string) (string, error)
-	SetGlobal(key string, value string) error
+	SetGlobal(key string, value string)
 	GetConfig(key string) (string, error)
 	SetConfig(key string, value string) error
 	LoadConfig() error
@@ -25,46 +26,51 @@ type ConfigService interface {
 
 // ConfigServiceImpl ....
 type ConfigServiceImpl struct {
-	config     map[string]string // configuration from config file
-	globals    map[string]string // global variables (loaded in memory only)
-	loaded     bool
-	configMux  *sync.Mutex
-	globalsMux *sync.Mutex
+	ResourcePath string
+	Config       map[string]string // configuration from config file
+	Globals      map[string]string // global variables (loaded in memory only)
+	Loaded       bool
+	ConfigMux    *sync.Mutex
+	GlobalsMux   *sync.Mutex
 }
 
 // NewConfigService ....
 func NewConfigService() ConfigService {
 	return &ConfigServiceImpl{
-		config:     make(map[string]string),
-		globals:    make(map[string]string),
-		loaded:     false,
-		configMux:  &sync.Mutex{},
-		globalsMux: &sync.Mutex{},
+		ResourcePath: defaultResourcePath,
+		Config:       make(map[string]string),
+		Globals:      make(map[string]string),
+		Loaded:       false,
+		ConfigMux:    &sync.Mutex{},
+		GlobalsMux:   &sync.Mutex{},
 	}
 }
 
 // GetConfig ....
 func (c *ConfigServiceImpl) GetConfig(key string) (string, error) {
-	if !c.loaded {
+	if !c.Loaded {
 		err := c.LoadConfig()
 		if err != nil {
 			return "", err
 		}
 	}
-	return c.config[key], nil
+	if val, ok := c.Config[key]; ok {
+		return val, nil
+	}
+	return "", errors.New("key not found")
 }
 
 // SetConfig ....
 func (c *ConfigServiceImpl) SetConfig(key string, value string) error {
-	if !c.loaded {
+	if !c.Loaded {
 		err := c.LoadConfig()
 		if err != nil {
 			return err
 		}
 	}
-	c.configMux.Lock()
-	defer c.configMux.Unlock()
-	c.config[key] = value
+	c.ConfigMux.Lock()
+	defer c.ConfigMux.Unlock()
+	c.Config[key] = value
 	return nil
 }
 
@@ -74,25 +80,24 @@ func (c *ConfigServiceImpl) GetGlobal(key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return c.globals[key], nil
+	return c.Globals[key], nil
 }
 
 // SetGlobal ....
-func (c *ConfigServiceImpl) SetGlobal(key string, value string) error {
-	c.globalsMux.Lock()
-	defer c.globalsMux.Unlock()
-	c.globals[key] = value
-	return nil
+func (c *ConfigServiceImpl) SetGlobal(key string, value string) {
+	c.GlobalsMux.Lock()
+	defer c.GlobalsMux.Unlock()
+	c.Globals[key] = value
 }
 
 // ParseConfigTree ....
 func (c *ConfigServiceImpl) ParseConfigTree(configTree *toml.Tree) {
-	c.configMux.Lock()
-	defer c.configMux.Unlock()
+	c.ConfigMux.Lock()
+	defer c.ConfigMux.Unlock()
 	for key, value := range configTree.ToMap() {
-		c.config[key] = value.(string)
+		c.Config[key] = value.(string)
 	}
-	c.loaded = true
+	c.Loaded = true
 }
 
 /* LoadConfig loads the config from the config file.
@@ -101,7 +106,8 @@ func (c *ConfigServiceImpl) ParseConfigTree(configTree *toml.Tree) {
  */
 // LoadConfig ....
 func (c *ConfigServiceImpl) LoadConfig() error {
-	configTree, err := toml.LoadFile(filepath.Join(configFileDefPath, "config.toml"))
+	cfgFile := filepath.Join(c.ResourcePath, "config.toml")
+	configTree, err := toml.LoadFile(filepath.Join(cfgFile))
 	if err != nil {
 		return err
 	}
@@ -117,7 +123,7 @@ func (c *ConfigServiceImpl) SaveConfig() error {
 		return err
 	}
 	defer f.Close()
-	if err := toml.NewEncoder(f).Encode(c.config); err != nil {
+	if err := toml.NewEncoder(f).Encode(c.Config); err != nil {
 		return err
 	}
 	return nil

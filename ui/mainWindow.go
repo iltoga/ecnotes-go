@@ -8,6 +8,9 @@ import (
 	"fyne.io/fyne"
 	"fyne.io/fyne/container"
 	"fyne.io/fyne/widget"
+	"github.com/iltoga/ecnotes-go/lib/common"
+	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
+	"github.com/iltoga/ecnotes-go/service"
 )
 
 // UI ....
@@ -22,16 +25,19 @@ type UImpl struct {
 	app     fyne.App
 	windows map[string]fyne.Window
 	mux     *sync.Mutex
+	confSrv service.ConfigService
 }
 
 // NewUI UI constructor
 func NewUI(
 	app fyne.App,
+	confSrv service.ConfigService,
 ) *UImpl {
 	return &UImpl{
 		app:     app,
 		windows: make(map[string]fyne.Window),
 		mux:     &sync.Mutex{},
+		confSrv: confSrv,
 	}
 }
 
@@ -64,26 +70,80 @@ func (ui *UImpl) CreateMainWindow() {
 	))
 	w.Resize(fyne.NewSize(400, 600))
 
-	_ = ui.runPasswordPopUp(w)
+	// if we have encryption key, show password entry to decrypt and save to global map
+	if _, err := ui.confSrv.GetConfig("encryption_key"); err == nil {
+		w.SetContent(container.NewVBox(
+			widget.NewLabel("Decrypting..."),
+			ui.runPasswordPopUp(w, common.EncryptionKey_Decrypt),
+		))
+	} else {
+		w.SetContent(container.NewVBox(
+			widget.NewLabel("Generating encryption key..."),
+			ui.runPasswordPopUp(w, common.EncryptionKey_Generate),
+		))
+	}
 
+	// if we don't have encryption key, show password entry to generate it and save to config file
+	// _ = ui.runPasswordPopUp(w)
 	w.ShowAndRun()
 }
 
-func (ui *UImpl) runPasswordPopUp(w fyne.Window) (modal *widget.PopUp) {
+func (ui *UImpl) runPasswordPopUp(w fyne.Window, keyAction common.EncryptionKeyAction) (modal *widget.PopUp) {
+
 	var (
-		pwdWg = widget.NewPasswordEntry()
-		btnWg = widget.NewButton("OK", func() {
+		encKey, decKey string
+		err            error
+		popUpText      = widget.NewLabel("Enter password")
+		pwdWg          = widget.NewPasswordEntry()
+		btnWg          = widget.NewButton("OK", func() {
 			// generate encryption key, encrypt with password and save to file
+			switch keyAction {
+			case common.EncryptionKey_Generate:
+				// generate encryption key
+				encKey, err := cryptoUtil.SecureRandomStr(256)
+				if err != nil {
+					ui.showNotification("Error generating encryption key", err.Error())
+					return
+				}
+				ui.confSrv.SetGlobal("encryption_key", encKey)
+				// encrypt the key with password input in the password entry
+				if decKey, err = cryptoUtil.EncryptWithPassword(encKey, pwdWg.Text); err != nil {
+					ui.showNotification("Error encrypting encryption key", err.Error())
+					return
+				}
+				// save encrypted encryption key to config file
+				ui.confSrv.SetConfig("encryption_key", encKey)
+				ui.showNotification("Encryption key generated", "")
+			case common.EncryptionKey_Decrypt:
+				// decrypt the key with password input in the password entry
+				if encKey, err = ui.confSrv.GetConfig("encryption_key"); err != nil {
+					ui.showNotification("Error loading encryption key from configuration file", err.Error())
+					return
+				}
+				if decKey, err = cryptoUtil.DecryptWithPassword(encKey, pwdWg.Text); err != nil {
+					ui.showNotification("Error decrypting encryption key loaded from configuration file", err.Error())
+					return
+				}
+				ui.confSrv.SetGlobal("encryption_key", decKey)
+				ui.showNotification("Encryption key decrypted and stored in memory till app is closed", "")
+			default:
+				ui.showNotification("Error", "Unknown key action")
+			}
 
 			modal.Hide()
 			// reset password entry for security
-			// STEF totest only!
 			pwdWg.SetText("")
 		})
 	)
+
+	if keyAction == common.EncryptionKey_Decrypt {
+		btnWg.SetText("Enter password to Decrypt Key")
+	} else {
+		btnWg.SetText("Enter password to Encrypt generated Key")
+	}
 	modal = widget.NewModalPopUp(
 		widget.NewVBox(
-			widget.NewLabel("Generate Encryption Key"),
+			popUpText,
 			pwdWg,
 			btnWg,
 		),
@@ -93,7 +153,7 @@ func (ui *UImpl) runPasswordPopUp(w fyne.Window) (modal *widget.PopUp) {
 	return modal
 }
 
-func showNotification(a fyne.App, title, contentStr string) {
-	time.Sleep(time.Second * 2)
-	a.SendNotification(fyne.NewNotification(title, contentStr))
+func (ui *UImpl) showNotification(title, contentStr string) {
+	time.Sleep(time.Millisecond * 500)
+	ui.app.SendNotification(fyne.NewNotification(title, contentStr))
 }

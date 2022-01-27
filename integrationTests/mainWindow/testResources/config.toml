@@ -1,0 +1,2 @@
+crt_file = "./main.crt"
+key_file = "./main.key"
