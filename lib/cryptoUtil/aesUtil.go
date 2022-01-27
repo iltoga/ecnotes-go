@@ -13,14 +13,14 @@ import (
 // The message is encrypted using AES-256-CFB
 func EncryptWithPassword(message string, password string) (encmess string, err error) {
 	// hash the password with SHA256 (just to make some noise)
-	key := []byte(Hash(password))
+	key := Hash(password)
 	return EncryptAES256(key, message)
 }
 
 // DecryptWithPassword decrypts an encrypted message using a password
 func DecryptWithPassword(message string, password string) (encmess string, err error) {
 	// hash the password with SHA256 (just to make some noise)
-	key := []byte(Hash(password))
+	key := Hash(password)
 	return DecryptAES256(key, message)
 }
 

@@ -100,7 +100,7 @@ func (ui *UImpl) runPasswordPopUp(w fyne.Window, keyAction common.EncryptionKeyA
 			switch keyAction {
 			case common.EncryptionKey_Generate:
 				// generate encryption key
-				encKey, err := cryptoUtil.SecureRandomStr(256)
+				encKey, err := cryptoUtil.SecureRandomStr(32)
 				if err != nil {
 					ui.showNotification("Error generating encryption key", err.Error())
 					return
@@ -113,6 +113,10 @@ func (ui *UImpl) runPasswordPopUp(w fyne.Window, keyAction common.EncryptionKeyA
 				}
 				// save encrypted encryption key to config file
 				ui.confSrv.SetConfig("encryption_key", encKey)
+				if err := ui.confSrv.SaveConfig(); err != nil {
+					ui.showNotification("Error saving configuration", err.Error())
+					return
+				}
 				ui.showNotification("Encryption key generated", "")
 			case common.EncryptionKey_Decrypt:
 				// decrypt the key with password input in the password entry

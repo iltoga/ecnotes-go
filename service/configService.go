@@ -106,19 +106,17 @@ func (c *ConfigServiceImpl) ParseConfigTree(configTree *toml.Tree) {
  */
 // LoadConfig ....
 func (c *ConfigServiceImpl) LoadConfig() error {
-	cfgFile := filepath.Join(c.ResourcePath, "config.toml")
-	configTree, err := toml.LoadFile(filepath.Join(cfgFile))
+	configTree, err := toml.LoadFile(c.getConfigFilePath())
 	if err != nil {
 		return err
 	}
-
 	c.ParseConfigTree(configTree)
 	return nil
 }
 
 // SaveConfig ....
 func (c *ConfigServiceImpl) SaveConfig() error {
-	f, err := os.Create("config.toml")
+	f, err := os.Create(c.getConfigFilePath())
 	if err != nil {
 		return err
 	}
@@ -127,4 +125,8 @@ func (c *ConfigServiceImpl) SaveConfig() error {
 		return err
 	}
 	return nil
+}
+
+func (c *ConfigServiceImpl) getConfigFilePath() string {
+	return filepath.Join(c.ResourcePath, "config.toml")
 }

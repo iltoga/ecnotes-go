@@ -1,6 +1,7 @@
 package cryptoUtil_test
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
@@ -43,19 +44,19 @@ func Test_hash(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want string
+		want []byte
 	}{
 		{
 			name: "test1",
 			args: args{
 				s: "test string",
 			},
-			want: "10e6d647af44624442f388c2c14a787ff8b17e6165b83d767ec047768d8cbcb71a1a3226e7cc7816bc79c0427d94a9da688c41a3992c7bf5e4d7cc3e0be5dbac",
+			want: []byte{119, 233, 243, 83, 67, 24, 51, 195, 22, 189, 65, 220, 136, 103, 13, 154, 210, 29, 46, 89, 80, 214, 245, 226, 52, 111, 46, 136, 89, 244, 252, 155},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := cryptoUtil.Hash(tt.args.s); got != tt.want {
+			if got := cryptoUtil.Hash(tt.args.s); !bytes.Equal(got, tt.want) {
 				t.Errorf("hash() = %v, want %v", got, tt.want)
 			}
 		})
