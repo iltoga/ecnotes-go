@@ -14,6 +14,8 @@ const (
 
 // ConfigService ....
 type ConfigService interface {
+	GetGlobal(key string) (string, error)
+	SetGlobal(key string, value string) error
 	GetConfig(key string) (string, error)
 	SetConfig(key string, value string) error
 	LoadConfig() error
@@ -23,17 +25,21 @@ type ConfigService interface {
 
 // ConfigServiceImpl ....
 type ConfigServiceImpl struct {
-	config map[string]string
-	loaded bool
-	mutex  *sync.Mutex
+	config     map[string]string // configuration from config file
+	globals    map[string]string // global variables (loaded in memory only)
+	loaded     bool
+	configMux  *sync.Mutex
+	globalsMux *sync.Mutex
 }
 
 // NewConfigService ....
 func NewConfigService() ConfigService {
 	return &ConfigServiceImpl{
-		config: make(map[string]string),
-		loaded: false,
-		mutex:  &sync.Mutex{},
+		config:     make(map[string]string),
+		globals:    make(map[string]string),
+		loaded:     false,
+		configMux:  &sync.Mutex{},
+		globalsMux: &sync.Mutex{},
 	}
 }
 
@@ -56,16 +62,33 @@ func (c *ConfigServiceImpl) SetConfig(key string, value string) error {
 			return err
 		}
 	}
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.configMux.Lock()
+	defer c.configMux.Unlock()
 	c.config[key] = value
+	return nil
+}
+
+// GetGlobal ....
+func (c *ConfigServiceImpl) GetGlobal(key string) (string, error) {
+	err := c.LoadConfig()
+	if err != nil {
+		return "", err
+	}
+	return c.globals[key], nil
+}
+
+// SetGlobal ....
+func (c *ConfigServiceImpl) SetGlobal(key string, value string) error {
+	c.globalsMux.Lock()
+	defer c.globalsMux.Unlock()
+	c.globals[key] = value
 	return nil
 }
 
 // ParseConfigTree ....
 func (c *ConfigServiceImpl) ParseConfigTree(configTree *toml.Tree) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.configMux.Lock()
+	defer c.configMux.Unlock()
 	for key, value := range configTree.ToMap() {
 		c.config[key] = value.(string)
 	}
