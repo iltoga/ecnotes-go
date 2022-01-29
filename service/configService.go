@@ -30,8 +30,8 @@ type ConfigServiceImpl struct {
 	Config       map[string]string // configuration from config file
 	Globals      map[string]string // global variables (loaded in memory only)
 	Loaded       bool
-	ConfigMux    *sync.Mutex
-	GlobalsMux   *sync.Mutex
+	ConfigMux    *sync.RWMutex
+	GlobalsMux   *sync.RWMutex
 }
 
 // NewConfigService ....
@@ -41,8 +41,8 @@ func NewConfigService() ConfigService {
 		Config:       make(map[string]string),
 		Globals:      make(map[string]string),
 		Loaded:       false,
-		ConfigMux:    &sync.Mutex{},
-		GlobalsMux:   &sync.Mutex{},
+		ConfigMux:    &sync.RWMutex{},
+		GlobalsMux:   &sync.RWMutex{},
 	}
 }
 
@@ -54,6 +54,8 @@ func (c *ConfigServiceImpl) GetConfig(key string) (string, error) {
 			return "", err
 		}
 	}
+	c.ConfigMux.RLock()
+	defer c.ConfigMux.RUnlock()
 	if val, ok := c.Config[key]; ok {
 		return val, nil
 	}
@@ -80,7 +82,12 @@ func (c *ConfigServiceImpl) GetGlobal(key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return c.Globals[key], nil
+	c.GlobalsMux.RLock()
+	defer c.GlobalsMux.RUnlock()
+	if val, ok := c.Globals[key]; ok {
+		return val, nil
+	}
+	return "", errors.New("key not found")
 }
 
 // SetGlobal ....
@@ -121,6 +128,8 @@ func (c *ConfigServiceImpl) SaveConfig() error {
 		return err
 	}
 	defer f.Close()
+	c.ConfigMux.RLock()
+	defer c.ConfigMux.RUnlock()
 	if err := toml.NewEncoder(f).Encode(c.Config); err != nil {
 		return err
 	}

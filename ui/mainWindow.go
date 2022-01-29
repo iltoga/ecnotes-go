@@ -71,7 +71,7 @@ func (ui *UImpl) CreateMainWindow() {
 	w.Resize(fyne.NewSize(400, 600))
 
 	// if we have encryption key, show password entry to decrypt and save to global map
-	if _, err := ui.confSrv.GetConfig("encryption_key"); err == nil {
+	if _, err := ui.confSrv.GetConfig("common.CONFIG_ENCRYPTION_KEY"); err == nil {
 		w.SetContent(container.NewVBox(
 			widget.NewLabel("Decrypting..."),
 			ui.runPasswordPopUp(w, common.EncryptionKeyAction_Decrypt),
@@ -89,7 +89,6 @@ func (ui *UImpl) CreateMainWindow() {
 }
 
 func (ui *UImpl) runPasswordPopUp(w fyne.Window, keyAction common.EncryptionKeyAction) (modal *widget.PopUp) {
-
 	var (
 		encKey, decKey string
 		err            error
@@ -105,14 +104,14 @@ func (ui *UImpl) runPasswordPopUp(w fyne.Window, keyAction common.EncryptionKeyA
 					ui.showNotification("Error generating encryption key", err.Error())
 					return
 				}
-				ui.confSrv.SetGlobal("encryption_key", decKey)
+				ui.confSrv.SetGlobal("common.CONFIG_ENCRYPTION_KEY", decKey)
 				// encrypt the key with password input in the password entry
-				if encKey, err = cryptoUtil.EncryptWithPassword(decKey, pwdWg.Text); err != nil {
+				if encKey, err = cryptoUtil.EncryptMessage(decKey, pwdWg.Text); err != nil {
 					ui.showNotification("Error encrypting encryption key", err.Error())
 					return
 				}
 				// save encrypted encryption key to config file
-				ui.confSrv.SetConfig("encryption_key", encKey)
+				ui.confSrv.SetConfig("common.CONFIG_ENCRYPTION_KEY", encKey)
 				if err := ui.confSrv.SaveConfig(); err != nil {
 					ui.showNotification("Error saving configuration", err.Error())
 					return
@@ -120,15 +119,15 @@ func (ui *UImpl) runPasswordPopUp(w fyne.Window, keyAction common.EncryptionKeyA
 				ui.showNotification("Encryption key generated", "")
 			case common.EncryptionKeyAction_Decrypt:
 				// decrypt the key with password input in the password entry
-				if encKey, err = ui.confSrv.GetConfig("encryption_key"); err != nil {
+				if encKey, err = ui.confSrv.GetConfig("common.CONFIG_ENCRYPTION_KEY"); err != nil {
 					ui.showNotification("Error loading encryption key from app configuration", err.Error())
 					return
 				}
-				if decKey, err = cryptoUtil.DecryptWithPassword(encKey, pwdWg.Text); err != nil {
+				if decKey, err = cryptoUtil.DecryptMessage(encKey, pwdWg.Text); err != nil {
 					ui.showNotification("Error decrypting encryption key", err.Error())
 					return
 				}
-				ui.confSrv.SetGlobal("encryption_key", decKey)
+				ui.confSrv.SetGlobal("common.CONFIG_ENCRYPTION_KEY", decKey)
 				ui.showNotification("Encryption key decrypted and stored in memory till app is closed", "")
 			default:
 				ui.showNotification("Error", "Unknown key action")

@@ -40,8 +40,8 @@ func TestConfigServiceImpl_GetConfig(t *testing.T) {
 		Config       map[string]string
 		Globals      map[string]string
 		Loaded       bool
-		ConfigMux    *sync.Mutex
-		GlobalsMux   *sync.Mutex
+		ConfigMux    *sync.RWMutex
+		GlobalsMux   *sync.RWMutex
 	}
 	type args struct {
 		key string

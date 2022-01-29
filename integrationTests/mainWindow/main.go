@@ -13,12 +13,12 @@ import (
 // main function to be called from the test
 func main() {
 	configService := &service.ConfigServiceImpl{
-		ResourcePath: "./testResources",
+		ResourcePath: "./integrationTests/mainWindow/testResources",
 		Config:       make(map[string]string),
 		Globals:      make(map[string]string),
 		Loaded:       false,
-		ConfigMux:    &sync.Mutex{},
-		GlobalsMux:   &sync.Mutex{},
+		ConfigMux:    &sync.RWMutex{},
+		GlobalsMux:   &sync.RWMutex{},
 	}
 	if err := configService.LoadConfig(); err != nil {
 		fmt.Println(err)
