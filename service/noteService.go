@@ -24,8 +24,8 @@ type NoteService interface {
 
 // NoteServiceImpl ....
 type NoteServiceImpl struct {
-	NoteRepo NoteServiceRepository
-	ConfigService
+	NoteRepo      NoteServiceRepository
+	ConfigService ConfigService
 	// titles a map representing all notes in db (key: note title hash, value: note ID)
 	TitlesIDMap map[string]int
 	// Titles an array with all note Titles in db
