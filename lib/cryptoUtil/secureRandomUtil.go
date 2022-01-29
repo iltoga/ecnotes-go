@@ -2,6 +2,7 @@ package cryptoUtil
 
 import (
 	"crypto/rand"
+	"encoding/hex"
 
 	"golang.org/x/crypto/sha3"
 )
@@ -31,4 +32,9 @@ func SecureRandomStr(length int) (string, error) {
 func Hash(s string) []byte {
 	h := sha3.Sum256([]byte(s))
 	return h[:]
+}
+
+// EncodedHash returns the hex encoded hash of the given string
+func EncodedHash(s string) string {
+	return hex.EncodeToString(Hash(s))
 }

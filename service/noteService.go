@@ -73,7 +73,7 @@ func (ns *NoteServiceImpl) GetNotes() ([]Note, error) {
 	ns.TitlesIDMap = make(map[string]int)
 	for _, note := range notes {
 		ns.Titles = append(ns.Titles, note.Title)
-		titleHash := string(cryptoUtil.Hash(note.Title))
+		titleHash := cryptoUtil.EncodedHash(note.Title)
 		ns.TitlesIDMap[titleHash] = note.ID
 	}
 	return notes, nil
@@ -82,7 +82,7 @@ func (ns *NoteServiceImpl) GetNotes() ([]Note, error) {
 // SearchNotes ....
 func (ns *NoteServiceImpl) SearchNotes(query string, fuzzySearch bool) (map[string]int, error) {
 	// get all notes if Titles is empty
-	if ns.Titles == nil {
+	if ns.Titles == nil || len(ns.Titles) == 0 {
 		_, err := ns.GetNotes()
 		if err != nil {
 			return nil, err
@@ -101,13 +101,13 @@ func (ns *NoteServiceImpl) searchFuzzy(query string) (map[string]int, error) {
 	// for every result calculate the hash of the title and get the corresponding keys of titlesIDMap and return a subset of the titlesIDMap with the matching keys
 	result := make(map[string]int)
 	for _, match := range matches {
-		result[string(cryptoUtil.Hash(match.Target))] = ns.TitlesIDMap[string(cryptoUtil.Hash(match.Target))]
+		result[string(cryptoUtil.EncodedHash(match.Target))] = ns.TitlesIDMap[string(cryptoUtil.EncodedHash(match.Target))]
 	}
 	return result, nil
 }
 
 func (ns *NoteServiceImpl) searchExact(query string) (map[string]int, error) {
-	hashedTitle := string(cryptoUtil.Hash(query))
+	hashedTitle := string(cryptoUtil.EncodedHash(query))
 	if _, ok := ns.TitlesIDMap[hashedTitle]; ok {
 		return map[string]int{hashedTitle: ns.TitlesIDMap[hashedTitle]}, nil
 	}
