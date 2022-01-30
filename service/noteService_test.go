@@ -5,10 +5,38 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/service"
+	toml "github.com/pelletier/go-toml"
 )
+
+var testNote = &service.Note{
+	ID:      1,
+	Title:   "title1",
+	Content: "test content",
+	CreatedAt: time.Date(
+		2020,
+		time.January,
+		1,
+		0,
+		0,
+		0,
+		0,
+		time.UTC,
+	).Format(time.RFC3339),
+	UpdatedAt: time.Date(
+		2020,
+		time.January,
+		1,
+		0,
+		0,
+		0,
+		0,
+		time.UTC,
+	).Format(time.RFC3339),
+}
 
 type NoteRepositoryMockImpl struct {
 	mockedNotes []service.Note
@@ -92,6 +120,41 @@ func (nsr *NoteRepositoryMockImpl) DeleteNote(id int) error {
 		}
 	}
 	return errors.New(common.ERR_NOTE_NOT_FOUND)
+}
+
+type noteConfigServiceMockImpl struct {
+	Config  map[string]string // configuration from config file
+	Globals map[string]string // global variables (loaded in memory only)
+	Loaded  bool
+}
+
+func (nsc *noteConfigServiceMockImpl) GetGlobal(key string) (string, error) {
+	return nsc.Globals[key], nil
+}
+
+func (nsc *noteConfigServiceMockImpl) SetGlobal(key string, value string) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (nsc *noteConfigServiceMockImpl) GetConfig(key string) (string, error) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (nsc *noteConfigServiceMockImpl) SetConfig(key string, value string) error {
+	panic("not implemented") // TODO: Implement
+}
+
+func (nsc *noteConfigServiceMockImpl) LoadConfig() error {
+	nsc.Loaded = true
+	return nil
+}
+
+func (nsc *noteConfigServiceMockImpl) ParseConfigTree(configTree *toml.Tree) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (nsc *noteConfigServiceMockImpl) SaveConfig() error {
+	panic("not implemented") // TODO: Implement
 }
 
 func TestNoteServiceImpl_GetNote(t *testing.T) {
@@ -249,8 +312,10 @@ func TestNoteServiceImpl_DeleteNote(t *testing.T) {
 
 func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 	type fields struct {
-		TitlesIDMap map[string]int
-		Titles      []string
+		TitlesIDMap   map[string]int
+		Titles        []string
+		NoteRepo      service.NoteServiceRepository
+		ConfigService service.ConfigService
 	}
 	type args struct {
 		note *service.Note
@@ -261,16 +326,39 @@ func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 		args    args
 		wantErr bool
 	}{
-		// TODO: Add test cases.
+		{
+			name: "test",
+			fields: fields{
+				TitlesIDMap: map[string]int{},
+				Titles:      []string{},
+				NoteRepo:    nil,
+				ConfigService: &noteConfigServiceMockImpl{
+					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: "1234567890"},
+					Loaded:  true,
+				},
+			},
+			args: args{
+				note: testNote,
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ns := &service.NoteServiceImpl{
-				TitlesIDMap: tt.fields.TitlesIDMap,
-				Titles:      tt.fields.Titles,
+				ConfigService: tt.fields.ConfigService,
+				NoteRepo:      tt.fields.NoteRepo,
+				TitlesIDMap:   tt.fields.TitlesIDMap,
+				Titles:        tt.fields.Titles,
 			}
 			if err := ns.EncryptNote(tt.args.note); (err != nil) != tt.wantErr {
 				t.Errorf("service.NoteServiceImpl.EncryptNote() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err := ns.DecryptNote(tt.args.note); err != nil {
+				t.Errorf("service.NoteServiceImpl.DecryptNote() error = %v, wantErr %v", err, tt.wantErr)
+				if !reflect.DeepEqual(tt.args.note, testNote) {
+					t.Errorf("service.NoteServiceImpl.DecryptNote() = %v, want %v", tt.args.note, testNote)
+				}
 			}
 		})
 	}

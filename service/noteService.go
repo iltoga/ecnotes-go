@@ -132,7 +132,7 @@ func (ns *NoteServiceImpl) DeleteNote(id int) error {
 // EncryptNote ....
 func (ns *NoteServiceImpl) EncryptNote(note *Note) error {
 	// make sure the note is not empty
-	if note.Title == "" || note.Content == "" {
+	if note == nil || note.Title == "" || note.Content == "" {
 		return errors.New(common.ERR_NOTE_EMPTY)
 	}
 	// make sure we have the encryption key
@@ -144,14 +144,14 @@ func (ns *NoteServiceImpl) EncryptNote(note *Note) error {
 	if err != nil {
 		return err
 	}
-	note.Content = string(encryptedContent)
+	note.Content = encryptedContent
 	return nil
 }
 
 // DecryptNote ....
 func (ns *NoteServiceImpl) DecryptNote(note *Note) error {
 	// make sure the note is not empty
-	if note.Title == "" || note.Content == "" {
+	if note == nil || note.Title == "" || note.Content == "" {
 		return errors.New(common.ERR_NOTE_EMPTY)
 	}
 	// make sure we have the encryption key
@@ -163,7 +163,7 @@ func (ns *NoteServiceImpl) DecryptNote(note *Note) error {
 	if err != nil {
 		return err
 	}
-	note.Content = string(decryptedContent)
+	note.Content = decryptedContent
 	return nil
 }
 

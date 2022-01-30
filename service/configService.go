@@ -118,6 +118,7 @@ func (c *ConfigServiceImpl) LoadConfig() error {
 		return err
 	}
 	c.ParseConfigTree(configTree)
+	c.Loaded = true
 	return nil
 }
 
