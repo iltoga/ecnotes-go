@@ -71,7 +71,7 @@ func (ui *UImpl) CreateMainWindow() {
 	w.Resize(fyne.NewSize(400, 600))
 
 	// if we have encryption key, show password entry to decrypt and save to global map
-	if _, err := ui.confSrv.GetConfig("common.CONFIG_ENCRYPTION_KEY"); err == nil {
+	if _, err := ui.confSrv.GetConfig(common.CONFIG_ENCRYPTION_KEY); err == nil {
 		w.SetContent(container.NewVBox(
 			widget.NewLabel("Decrypting..."),
 			ui.runPasswordPopUp(w, common.EncryptionKeyAction_Decrypt),
@@ -104,14 +104,14 @@ func (ui *UImpl) runPasswordPopUp(w fyne.Window, keyAction common.EncryptionKeyA
 					ui.showNotification("Error generating encryption key", err.Error())
 					return
 				}
-				ui.confSrv.SetGlobal("common.CONFIG_ENCRYPTION_KEY", decKey)
+				ui.confSrv.SetGlobal(common.CONFIG_ENCRYPTION_KEY, decKey)
 				// encrypt the key with password input in the password entry
 				if encKey, err = cryptoUtil.EncryptMessage(decKey, pwdWg.Text); err != nil {
 					ui.showNotification("Error encrypting encryption key", err.Error())
 					return
 				}
 				// save encrypted encryption key to config file
-				ui.confSrv.SetConfig("common.CONFIG_ENCRYPTION_KEY", encKey)
+				ui.confSrv.SetConfig(common.CONFIG_ENCRYPTION_KEY, encKey)
 				if err := ui.confSrv.SaveConfig(); err != nil {
 					ui.showNotification("Error saving configuration", err.Error())
 					return
@@ -127,7 +127,7 @@ func (ui *UImpl) runPasswordPopUp(w fyne.Window, keyAction common.EncryptionKeyA
 					ui.showNotification("Error decrypting encryption key", err.Error())
 					return
 				}
-				ui.confSrv.SetGlobal("common.CONFIG_ENCRYPTION_KEY", decKey)
+				ui.confSrv.SetGlobal(common.CONFIG_ENCRYPTION_KEY, decKey)
 				ui.showNotification("Encryption key decrypted and stored in memory till app is closed", "")
 			default:
 				ui.showNotification("Error", "Unknown key action")

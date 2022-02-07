@@ -20,7 +20,6 @@ type ConfigServiceTestSuite struct {
 
 func (s *ConfigServiceTestSuite) TestParseConfigTree(t *testing.T) {
 	config, _ := toml.Load(`
-[certs]
 crt_file = "./main.crt"
 key_file = "./main.key"
 `)
@@ -34,7 +33,7 @@ key_file = "./main.key"
 	assert.Equal(t, "./main.key", fileKey)
 }
 
-func TestConfigServiceImpl_GetConfig(t *testing.T) {
+func (s *ConfigServiceTestSuite) TestConfigServiceImpl_GetConfig(t *testing.T) {
 	type fields struct {
 		ResourcePath string
 		Config       map[string]string
@@ -59,7 +58,9 @@ func TestConfigServiceImpl_GetConfig(t *testing.T) {
 				Config: map[string]string{
 					"test_key": "test value",
 				},
-				Loaded: true,
+				ConfigMux:  &sync.RWMutex{},
+				GlobalsMux: &sync.RWMutex{},
+				Loaded:     true,
 			},
 			args: args{
 				key: "test_key",
@@ -73,7 +74,9 @@ func TestConfigServiceImpl_GetConfig(t *testing.T) {
 				Config: map[string]string{
 					"test_key": "test value",
 				},
-				Loaded: true,
+				ConfigMux:  &sync.RWMutex{},
+				GlobalsMux: &sync.RWMutex{},
+				Loaded:     true,
 			},
 			args: args{
 				key: "test_key1",
@@ -84,7 +87,9 @@ func TestConfigServiceImpl_GetConfig(t *testing.T) {
 		{
 			name: "GetConfig_Error_Loading_Config_File",
 			fields: fields{
-				Loaded: false,
+				Loaded:     false,
+				ConfigMux:  &sync.RWMutex{},
+				GlobalsMux: &sync.RWMutex{},
 			},
 			args: args{
 				key: "test_key",

@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"sort"
-	"sync"
 
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
@@ -12,11 +11,13 @@ import (
 
 // NoteService ....
 type NoteService interface {
-	GetNote(id int) (Note, error)
+	GetNote(id int) (*Note, error)
 	GetNotes() ([]Note, error)
-	SearchNotes(query string, fuzzySearch bool) (map[string]int, error)
-	CreateNote(note Note) error
-	UpdateNote(note Note) error
+	SearchNotes(query string, fuzzySearch bool) ([]string, error)
+	CreateNote(note *Note) error
+	UpdateNoteContent(note *Note) error
+
+	UpdateNoteTitle(oldTitle, newTitle string) error
 	DeleteNote(id int) error
 	EncryptNote(note *Note) error
 	DecryptNote(note *Note) error
@@ -26,11 +27,8 @@ type NoteService interface {
 type NoteServiceImpl struct {
 	NoteRepo      NoteServiceRepository
 	ConfigService ConfigService
-	// titles a map representing all notes in db (key: note title hash, value: note ID)
-	TitlesIDMap map[string]int
 	// Titles an array with all note Titles in db
-	Titles        []string
-	TitlesIDMutex *sync.RWMutex
+	Titles []string
 }
 
 // Note ....
@@ -38,8 +36,9 @@ type Note struct {
 	ID        int    `json:"id"`
 	Title     string `json:"title"`
 	Content   string `json:"content"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	Hidden    bool   `json:"hidden"`
+	CreatedAt int64  `json:"created_at"`
+	UpdatedAt int64  `json:"updated_at"`
 }
 
 // NewNoteService ....
@@ -50,37 +49,45 @@ func NewNoteService(
 	return &NoteServiceImpl{
 		NoteRepo:      noteRepo,
 		ConfigService: configService,
-		TitlesIDMap:   make(map[string]int),
-		Titles:        make([]string, 0),
-		TitlesIDMutex: &sync.RWMutex{},
+		Titles:        []string{},
 	}
 }
 
-// GetNote ....
-func (ns *NoteServiceImpl) GetNote(id int) (Note, error) {
-	return ns.NoteRepo.GetNote(id)
+// GetNote retreives a note from the db by id and decrypts it
+func (ns *NoteServiceImpl) GetNote(id int) (*Note, error) {
+	note, err := ns.NoteRepo.GetNote(id)
+	if err != nil {
+		return nil, err
+	}
+	// decrypt content before returning
+	if err := ns.DecryptNote(note); err != nil {
+		return nil, err
+	}
+	return note, nil
 }
 
-// GetNotes ....
+// GetNotes returns all note titles from the db and populate Titles array and TitlesIDMap with the results
 func (ns *NoteServiceImpl) GetNotes() ([]Note, error) {
 	notes, err := ns.NoteRepo.GetAllNotes()
 	if err != nil {
 		return nil, err
 	}
-	ns.TitlesIDMutex.Lock()
-	defer ns.TitlesIDMutex.Unlock()
-	ns.Titles = make([]string, 0)
-	ns.TitlesIDMap = make(map[string]int)
-	for _, note := range notes {
+	for idx, note := range notes {
 		ns.Titles = append(ns.Titles, note.Title)
-		titleHash := cryptoUtil.EncodedHash(note.Title)
-		ns.TitlesIDMap[titleHash] = note.ID
+		// decrypt content before returning
+		if err := ns.DecryptNote(&note); err != nil {
+			// TODO: maybe use a different strategy to handle this error. Something like:
+			// - log the error and continue
+			return nil, err
+		}
+		// swap the note with the decrypted one
+		notes[idx] = note
 	}
 	return notes, nil
 }
 
 // SearchNotes ....
-func (ns *NoteServiceImpl) SearchNotes(query string, fuzzySearch bool) (map[string]int, error) {
+func (ns *NoteServiceImpl) SearchNotes(query string, fuzzySearch bool) ([]string, error) {
 	// get all notes if Titles is empty
 	if ns.Titles == nil || len(ns.Titles) == 0 {
 		_, err := ns.GetNotes()
@@ -90,42 +97,134 @@ func (ns *NoteServiceImpl) SearchNotes(query string, fuzzySearch bool) (map[stri
 	}
 	// search the titles array and return the IDs of the notes that match the query
 	if fuzzySearch {
-		return ns.searchFuzzy(query)
+		return ns.searchFuzzy(query), nil
 	}
-	return ns.searchExact(query)
+	return ns.searchExact(query), nil
 }
 
-func (ns *NoteServiceImpl) searchFuzzy(query string) (map[string]int, error) {
+func (ns *NoteServiceImpl) searchFuzzy(query string) []string {
 	matches := fuzzy.RankFind(query, ns.Titles)
 	sort.Sort(matches)
 	// for every result calculate the hash of the title and get the corresponding keys of titlesIDMap and return a subset of the titlesIDMap with the matching keys
-	result := make(map[string]int)
+	result := []string{}
 	for _, match := range matches {
-		result[string(cryptoUtil.EncodedHash(match.Target))] = ns.TitlesIDMap[string(cryptoUtil.EncodedHash(match.Target))]
+		result = append(result, match.Target)
 	}
-	return result, nil
+	return result
 }
 
-func (ns *NoteServiceImpl) searchExact(query string) (map[string]int, error) {
-	hashedTitle := string(cryptoUtil.EncodedHash(query))
-	if _, ok := ns.TitlesIDMap[hashedTitle]; ok {
-		return map[string]int{hashedTitle: ns.TitlesIDMap[hashedTitle]}, nil
+func (ns *NoteServiceImpl) searchExact(query string) []string {
+	for i, title := range ns.Titles {
+		if title == query {
+			return []string{ns.Titles[i]}
+		}
 	}
-	return map[string]int{}, nil
+	return []string{}
 }
 
 // CreateNote ....
-func (ns *NoteServiceImpl) CreateNote(note Note) error {
+func (ns *NoteServiceImpl) CreateNote(note *Note) error {
+	if note.Title == "" || note.Content == "" {
+		return errors.New(common.ERR_NOTE_EMPTY)
+	}
+	// generate a new note ID if the note has no ID
+	if note.ID == 0 {
+		note.ID = ns.NoteRepo.GetIDFromTitle(note.Title)
+	}
+	// make sure the note ID is unique
+	if exists, _ := ns.NoteRepo.NoteExists(note.ID); exists {
+		return errors.New(common.ERR_NOTE_ALREADY_EXISTS)
+	}
+	note.CreatedAt = common.GetCurrentTimestamp()
+	note.UpdatedAt = common.GetCurrentTimestamp()
+	note.Hidden = false
+	// encrypt content before saving to db
+	if err := ns.EncryptNote(note); err != nil {
+		return err
+	}
+	// add note title to titles array
+	ns.Titles = append(ns.Titles, note.Title)
 	return ns.NoteRepo.CreateNote(note)
 }
 
-// UpdateNote ....
-func (ns *NoteServiceImpl) UpdateNote(note Note) error {
+// UpdateNoteContent update the content of an existing note
+func (ns *NoteServiceImpl) UpdateNoteContent(note *Note) error {
+	if note.Title == "" || note.Content == "" || note.ID == 0 {
+		return errors.New(common.ERR_NOTE_EMPTY)
+	}
+	// make sure the note already exists since we are updating the content
+	if ok, err := ns.NoteRepo.NoteExists(note.ID); err != nil {
+		return err
+	} else if !ok {
+		return errors.New(common.ERR_NOTE_NOT_FOUND)
+	}
+	note.UpdatedAt = common.GetCurrentTimestamp()
+	// encrypt content before saving to db
+	if err := ns.EncryptNote(note); err != nil {
+		return err
+	}
 	return ns.NoteRepo.UpdateNote(note)
+}
+
+// UpdateNoteTitle update the title of an existing UpdateNote
+// since the title is used as a key in db we need to delete the old note and create a new one
+// the new note is a copy of the old note with the new title
+func (ns *NoteServiceImpl) UpdateNoteTitle(oldTitle, newTitle string) error {
+	if newTitle == "" {
+		return errors.New(common.ERR_NOTE_TITLE_EMPTY)
+	}
+	if newTitle == oldTitle {
+		return errors.New(common.ERR_NOTE_TITLE_SAME)
+	}
+	// make sure the note already exists since we are updating the content
+	oldIndex := ns.NoteRepo.GetIDFromTitle(oldTitle)
+	if ok, err := ns.NoteRepo.NoteExists(oldIndex); err != nil {
+		return err
+	} else if !ok {
+		return errors.New(common.ERR_NOTE_NOT_FOUND)
+	}
+	note, err := ns.NoteRepo.GetNote(oldIndex)
+	if err != nil {
+		return err
+	}
+	note.Title = newTitle
+	newIndex := ns.NoteRepo.GetIDFromTitle(newTitle)
+	note.ID = newIndex
+	note.UpdatedAt = common.GetCurrentTimestamp()
+	if err := ns.NoteRepo.DeleteNote(oldIndex); err != nil {
+		return err
+	}
+	// delete old title from titles array
+	for i, title := range ns.Titles {
+		if title == oldTitle {
+			ns.Titles = append(ns.Titles[:i], ns.Titles[i+1:]...)
+			break
+		}
+	}
+	// add new title to titles array
+	ns.Titles = append(ns.Titles, newTitle)
+	// no need to encrypt the note since with NoteRepo.GetNote we already have the content encrypted
+	return ns.NoteRepo.CreateNote(note)
 }
 
 // DeleteNote ....
 func (ns *NoteServiceImpl) DeleteNote(id int) error {
+	if ok, err := ns.NoteRepo.NoteExists(id); err != nil {
+		return err
+	} else if !ok {
+		return errors.New(common.ERR_NOTE_NOT_FOUND)
+	}
+	note, err := ns.NoteRepo.GetNote(id)
+	if err != nil {
+		return err
+	}
+	// remove the note from the titles array
+	for i, title := range ns.Titles {
+		if title == note.Title {
+			ns.Titles = append(ns.Titles[:i], ns.Titles[i+1:]...)
+			break
+		}
+	}
 	return ns.NoteRepo.DeleteNote(id)
 }
 

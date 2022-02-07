@@ -6,24 +6,6 @@ import (
 	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
 )
 
-// func main() {
-// 	CIPHER_KEY := []byte("0123456789012345")
-// 	msg := "A quick brown fox jumped over the lazy dog."
-
-// 	if encrypted, err := Encrypt(CIPHER_KEY, msg); err != nil {
-// 		log.Println(err)
-// 	} else {
-// 		log.Printf("CIPHER KEY: %s\n", string(CIPHER_KEY))
-// 		log.Printf("ENCRYPTED: %s\n", encrypted)
-
-// 		if decrypted, err := Decrypt(CIPHER_KEY, encrypted); err != nil {
-// 			log.Println(err)
-// 		} else {
-// 			log.Printf("DECRYPTED: %s\n", decrypted)
-// 		}
-// 	}
-// }
-
 func TestEncrypt(t *testing.T) {
 	type args struct {
 		key     []byte
@@ -69,7 +51,7 @@ func TestDecrypt(t *testing.T) {
 			name: "TestEncrypt_01",
 			args: args{
 				key:        []byte("0123456789012345"),
-				securemess: "emqCN1rO7DhJSw0L_0NJJYxiDwgIC7s_LYTwDXKlDIxwvnHvLGOi12ft0qwulgPwue-glzoPikL_m7Y=",
+				securemess: "73a95593798a6717658eda94d9db94c7f90a58ba750a214ee9be22e9eb724da0081213843543f0f2a5359b236e1591c46928e92ad314d29723ec6970cd3a24cef44df87caad907",
 			},
 			wantDecodedmess: "A quick brown fox jumped over the lazy dog.",
 			wantErr:         false,

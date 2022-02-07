@@ -25,6 +25,6 @@ func main() {
 		os.Exit(1)
 	}
 	// create a new ui
-	testUI := ui.NewUI(app.New(), configService)
+	testUI := ui.NewUI(app.NewWithID("testAPP"), configService)
 	testUI.CreateMainWindow()
 }

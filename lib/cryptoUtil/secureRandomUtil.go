@@ -38,3 +38,8 @@ func Hash(s string) []byte {
 func EncodedHash(s string) string {
 	return hex.EncodeToString(Hash(s))
 }
+
+// DecodedHash returns the decoded hash of the given hex string
+func DecodedHash(s string) ([]byte, error) {
+	return hex.DecodeString(s)
+}

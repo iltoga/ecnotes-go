@@ -3,43 +3,31 @@ package service_test
 import (
 	"errors"
 	"reflect"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/iltoga/ecnotes-go/lib/common"
+	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
 	"github.com/iltoga/ecnotes-go/service"
 	toml "github.com/pelletier/go-toml"
 )
 
 var testNote = &service.Note{
-	ID:      1,
-	Title:   "title1",
-	Content: "test content",
-	CreatedAt: time.Date(
-		2020,
-		time.January,
-		1,
-		0,
-		0,
-		0,
-		0,
-		time.UTC,
-	).Format(time.RFC3339),
-	UpdatedAt: time.Date(
-		2020,
-		time.January,
-		1,
-		0,
-		0,
-		0,
-		0,
-		time.UTC,
-	).Format(time.RFC3339),
+	ID:        1,
+	Title:     "title1",
+	Content:   "test content",
+	CreatedAt: 1643614680013,
+	UpdatedAt: 1643614680013,
+}
+
+type ConfigServiceMockImpl struct {
+	Loaded  bool
+	Globals map[string]string
+	Config  map[string]string
 }
 
 type NoteRepositoryMockImpl struct {
-	mockedNotes []service.Note
+	mockedNotes  []service.Note
+	mockedTitles []string
 }
 
 func NewNoteRepositoryMock() *NoteRepositoryMockImpl {
@@ -76,6 +64,14 @@ func NewNoteRepositoryMock() *NoteRepositoryMockImpl {
 				Content: "Life is what happens when you're busy making other plans",
 			},
 		},
+		mockedTitles: []string{
+			"Mandela quote",
+			"The way to get started is to quit talking and begin doing",
+			"Oprah Winfrey quote",
+			"The best is yet to come, Jhon Lennon",
+			"The future belongs to those who believe in the beauty of their dreams",
+			"Eleanor Roosevelt",
+		},
 	}
 }
 
@@ -85,26 +81,26 @@ func (nsr *NoteRepositoryMockImpl) GetAllNotes() ([]service.Note, error) {
 }
 
 // GetNote ....
-func (nsr *NoteRepositoryMockImpl) GetNote(id int) (service.Note, error) {
+func (nsr *NoteRepositoryMockImpl) GetNote(id int) (*service.Note, error) {
 	for _, note := range nsr.mockedNotes {
 		if note.ID == id {
-			return note, nil
+			return &note, nil
 		}
 	}
-	return service.Note{}, errors.New(common.ERR_NOTE_NOT_FOUND)
+	return nil, errors.New(common.ERR_NOTE_NOT_FOUND)
 }
 
 // CreateNote ....
-func (nsr *NoteRepositoryMockImpl) CreateNote(note service.Note) error {
-	nsr.mockedNotes = append(nsr.mockedNotes, note)
+func (nsr *NoteRepositoryMockImpl) CreateNote(note *service.Note) error {
+	nsr.mockedNotes = append(nsr.mockedNotes, *note)
 	return nil
 }
 
 // UpdateNote ....
-func (nsr *NoteRepositoryMockImpl) UpdateNote(note service.Note) error {
+func (nsr *NoteRepositoryMockImpl) UpdateNote(note *service.Note) error {
 	for i, n := range nsr.mockedNotes {
 		if n.ID == note.ID {
-			nsr.mockedNotes[i] = note
+			nsr.mockedNotes[i] = *note
 			return nil
 		}
 	}
@@ -120,6 +116,19 @@ func (nsr *NoteRepositoryMockImpl) DeleteNote(id int) error {
 		}
 	}
 	return errors.New(common.ERR_NOTE_NOT_FOUND)
+}
+
+func (nsr *NoteRepositoryMockImpl) NoteExists(id int) (bool, error) {
+	for _, note := range nsr.mockedNotes {
+		if note.ID == id {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (nsr *NoteRepositoryMockImpl) GetIDFromTitle(title string) int {
+	return int(cryptoUtil.IndexFromString(title))
 }
 
 type noteConfigServiceMockImpl struct {
@@ -159,8 +168,7 @@ func (nsc *noteConfigServiceMockImpl) SaveConfig() error {
 
 func TestNoteServiceImpl_GetNote(t *testing.T) {
 	type fields struct {
-		TitlesIDMap map[string]int
-		Titles      []string
+		Titles []string
 	}
 	type args struct {
 		id int
@@ -177,8 +185,7 @@ func TestNoteServiceImpl_GetNote(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ns := &service.NoteServiceImpl{
-				TitlesIDMap: tt.fields.TitlesIDMap,
-				Titles:      tt.fields.Titles,
+				Titles: tt.fields.Titles,
 			}
 			got, err := ns.GetNote(tt.args.id)
 			if (err != nil) != tt.wantErr {
@@ -194,8 +201,7 @@ func TestNoteServiceImpl_GetNote(t *testing.T) {
 
 func TestNoteServiceImpl_GetNotes(t *testing.T) {
 	type fields struct {
-		TitlesIDMap map[string]int
-		Titles      []string
+		Titles []string
 	}
 	tests := []struct {
 		name    string
@@ -208,8 +214,7 @@ func TestNoteServiceImpl_GetNotes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ns := &service.NoteServiceImpl{
-				TitlesIDMap: tt.fields.TitlesIDMap,
-				Titles:      tt.fields.Titles,
+				Titles: tt.fields.Titles,
 			}
 			got, err := ns.GetNotes()
 			if (err != nil) != tt.wantErr {
@@ -223,96 +228,8 @@ func TestNoteServiceImpl_GetNotes(t *testing.T) {
 	}
 }
 
-func TestNoteServiceImpl_CreateNote(t *testing.T) {
-	type fields struct {
-		TitlesIDMap map[string]int
-		Titles      []string
-	}
-	type args struct {
-		note service.Note
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ns := &service.NoteServiceImpl{
-				TitlesIDMap: tt.fields.TitlesIDMap,
-				Titles:      tt.fields.Titles,
-			}
-			if err := ns.CreateNote(tt.args.note); (err != nil) != tt.wantErr {
-				t.Errorf("service.NoteServiceImpl.CreateNote() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestNoteServiceImpl_UpdateNote(t *testing.T) {
-	type fields struct {
-		TitlesIDMap map[string]int
-		Titles      []string
-	}
-	type args struct {
-		note service.Note
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ns := &service.NoteServiceImpl{
-				TitlesIDMap: tt.fields.TitlesIDMap,
-				Titles:      tt.fields.Titles,
-			}
-			if err := ns.UpdateNote(tt.args.note); (err != nil) != tt.wantErr {
-				t.Errorf("service.NoteServiceImpl.UpdateNote() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestNoteServiceImpl_DeleteNote(t *testing.T) {
-	type fields struct {
-		TitlesIDMap map[string]int
-		Titles      []string
-	}
-	type args struct {
-		id int
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ns := &service.NoteServiceImpl{
-				TitlesIDMap: tt.fields.TitlesIDMap,
-				Titles:      tt.fields.Titles,
-			}
-			if err := ns.DeleteNote(tt.args.id); (err != nil) != tt.wantErr {
-				t.Errorf("service.NoteServiceImpl.DeleteNote() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 	type fields struct {
-		TitlesIDMap   map[string]int
 		Titles        []string
 		NoteRepo      service.NoteServiceRepository
 		ConfigService service.ConfigService
@@ -329,9 +246,8 @@ func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 		{
 			name: "test",
 			fields: fields{
-				TitlesIDMap: map[string]int{},
-				Titles:      []string{},
-				NoteRepo:    nil,
+				Titles:   []string{},
+				NoteRepo: nil,
 				ConfigService: &noteConfigServiceMockImpl{
 					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: "1234567890"},
 					Loaded:  true,
@@ -348,7 +264,6 @@ func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 			ns := &service.NoteServiceImpl{
 				ConfigService: tt.fields.ConfigService,
 				NoteRepo:      tt.fields.NoteRepo,
-				TitlesIDMap:   tt.fields.TitlesIDMap,
 				Titles:        tt.fields.Titles,
 			}
 			if err := ns.EncryptNote(tt.args.note); (err != nil) != tt.wantErr {
@@ -364,42 +279,12 @@ func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 	}
 }
 
-func TestNoteServiceImpl_DecryptNote(t *testing.T) {
-	type fields struct {
-		TitlesIDMap map[string]int
-		Titles      []string
-	}
-	type args struct {
-		note *service.Note
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ns := &service.NoteServiceImpl{
-				TitlesIDMap: tt.fields.TitlesIDMap,
-				Titles:      tt.fields.Titles,
-			}
-			if err := ns.DecryptNote(tt.args.note); (err != nil) != tt.wantErr {
-				t.Errorf("service.NoteServiceImpl.DecryptNote() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 func TestNoteServiceImpl_SearchNotes(t *testing.T) {
+	noteRepositoryMock := NewNoteRepositoryMock()
 	type fields struct {
 		NoteRepo      service.NoteServiceRepository
 		ConfigService service.ConfigService
-		TitlesIDMap   map[string]int
 		Titles        []string
-		TitlesIDMutex *sync.RWMutex
 	}
 	type args struct {
 		query       string
@@ -409,43 +294,45 @@ func TestNoteServiceImpl_SearchNotes(t *testing.T) {
 		name    string
 		fields  fields
 		args    args
-		want    map[string]int
+		want    []string
 		wantErr bool
 	}{
 		{
 			name: "Search notes",
 			fields: fields{
-				NoteRepo:      NewNoteRepositoryMock(),
-				ConfigService: service.NewConfigService(),
-				TitlesIDMap:   map[string]int{},
-				Titles:        []string{},
-				TitlesIDMutex: &sync.RWMutex{},
+				NoteRepo: noteRepositoryMock,
+				ConfigService: &noteConfigServiceMockImpl{
+					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: "1234567890"},
+					Loaded:  true,
+				},
+				Titles: noteRepositoryMock.mockedTitles,
 			},
 			args: args{
 				query:       "Mandela quote",
 				fuzzySearch: false,
 			},
-			want: map[string]int{
-				"00628e854bd9b090d494b49b8a2b4063f622411593b34fba27a041d5e1a8c8a7": 1,
+			want: []string{
+				"Mandela quote",
 			},
 			wantErr: false,
 		},
 		{
 			name: "Search notes with fuzzy search",
 			fields: fields{
-				NoteRepo:      NewNoteRepositoryMock(),
-				ConfigService: service.NewConfigService(),
-				TitlesIDMap:   map[string]int{},
-				Titles:        []string{},
-				TitlesIDMutex: &sync.RWMutex{},
+				NoteRepo: noteRepositoryMock,
+				ConfigService: &noteConfigServiceMockImpl{
+					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: "1234567890"},
+					Loaded:  true,
+				},
+				Titles: noteRepositoryMock.mockedTitles,
 			},
 			args: args{
 				query:       "quote",
 				fuzzySearch: true,
 			},
-			want: map[string]int{
-				"00628e854bd9b090d494b49b8a2b4063f622411593b34fba27a041d5e1a8c8a7": 1,
-				"82ade45b31514dc54ee6c48aaa20196d7cd8c1f85a24f800583e3b552a6bcdbb": 3,
+			want: []string{
+				"Mandela quote",
+				"Oprah Winfrey quote",
 			},
 			wantErr: false,
 		},
@@ -455,9 +342,7 @@ func TestNoteServiceImpl_SearchNotes(t *testing.T) {
 			ns := &service.NoteServiceImpl{
 				NoteRepo:      tt.fields.NoteRepo,
 				ConfigService: tt.fields.ConfigService,
-				TitlesIDMap:   tt.fields.TitlesIDMap,
 				Titles:        tt.fields.Titles,
-				TitlesIDMutex: tt.fields.TitlesIDMutex,
 			}
 			got, err := ns.SearchNotes(tt.args.query, tt.args.fuzzySearch)
 			if (err != nil) != tt.wantErr {
