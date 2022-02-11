@@ -6,8 +6,11 @@ import (
 	"os/signal"
 	"syscall"
 
+	"fyne.io/fyne/v2/app"
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/service"
+	"github.com/iltoga/ecnotes-go/service/observer"
+	"github.com/iltoga/ecnotes-go/ui"
 )
 
 var (
@@ -15,6 +18,7 @@ var (
 	noteService    service.NoteService
 	noteRepository service.NoteServiceRepository
 	kvdbPath       string
+	obs            = observer.NewObserver()
 	defaultBucket  = "notes"
 )
 
@@ -35,32 +39,19 @@ func init() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	noteService = service.NewNoteService(noteRepository, configService)
+	noteService = service.NewNoteService(noteRepository, configService, obs)
 }
 
 func main() {
 	SetupCloseHandler()
 
 	fmt.Println("Starting...")
-	notes, err := noteService.GetNotes()
-	if err != nil && err.Error() != common.ERR_BUCKET_EMPTY {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	if err.Error() == common.ERR_BUCKET_EMPTY {
-		newNote := &service.Note{
-			Title:   "Welcome to EcNotes",
-			Content: "This is your first note.\n\nYou can edit it by clicking on the title.",
-		}
-		if err := noteService.CreateNote(newNote); err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-	}
-	for _, note := range notes {
-		fmt.Printf("%+v\n", note)
-	}
-	// ui.CreateMainWindow()
+	// create a new ui
+	appUI := ui.NewUI(app.NewWithID("ec-notes"), configService, noteService)
+
+	// add listener to ui service to trigger note list widget update whenever the note title array changes
+	obs.AddListener(observer.EVENT_UPDATE_NOTE_TITLES, appUI.UpdateNoteListWidget())
+	appUI.CreateMainWindow()
 
 	// TODO: move to service (config validation)
 	// keyFile, err := configService.GetConfig("file_key")
@@ -75,9 +66,6 @@ func main() {
 	// fmt.Println("key file:", keyFile)
 	// fmt.Println("cert file:", crtFile)
 	// infinite loop to keep the program running
-	for {
-		select {}
-	}
 }
 
 // SetupCloseHandler creates a 'listener' on a new goroutine which will notify the

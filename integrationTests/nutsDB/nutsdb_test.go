@@ -9,6 +9,7 @@ import (
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
 	"github.com/iltoga/ecnotes-go/service"
+	"github.com/iltoga/ecnotes-go/service/observer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
@@ -153,7 +154,7 @@ func initDB() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	noteService = service.NewNoteService(noteRepository, configService)
+	noteService = service.NewNoteService(noteRepository, configService, observer.NewObserver())
 }
 
 func cleanup() {

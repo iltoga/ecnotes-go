@@ -6,6 +6,7 @@ import (
 
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
+	"github.com/iltoga/ecnotes-go/service/observer"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
@@ -13,6 +14,7 @@ import (
 type NoteService interface {
 	GetNote(id int) (*Note, error)
 	GetNotes() ([]Note, error)
+	GetTitles() []string
 	SearchNotes(query string, fuzzySearch bool) ([]string, error)
 	CreateNote(note *Note) error
 	UpdateNoteContent(note *Note) error
@@ -27,6 +29,7 @@ type NoteService interface {
 type NoteServiceImpl struct {
 	NoteRepo      NoteServiceRepository
 	ConfigService ConfigService
+	Observer      observer.Observer
 	// Titles an array with all note Titles in db
 	Titles []string
 }
@@ -45,10 +48,12 @@ type Note struct {
 func NewNoteService(
 	noteRepo NoteServiceRepository,
 	configService ConfigService,
+	observer observer.Observer,
 ) NoteService {
 	return &NoteServiceImpl{
 		NoteRepo:      noteRepo,
 		ConfigService: configService,
+		Observer:      observer,
 		Titles:        []string{},
 	}
 }
@@ -83,7 +88,14 @@ func (ns *NoteServiceImpl) GetNotes() ([]Note, error) {
 		// swap the note with the decrypted one
 		notes[idx] = note
 	}
+	// emit a note titles' update event
+	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
 	return notes, nil
+}
+
+// GetTitles returns all note titles from memory
+func (ns *NoteServiceImpl) GetTitles() []string {
+	return ns.Titles
 }
 
 // SearchNotes ....
@@ -96,14 +108,19 @@ func (ns *NoteServiceImpl) SearchNotes(query string, fuzzySearch bool) ([]string
 		}
 	}
 	// search the titles array and return the IDs of the notes that match the query
+	var fuzzyResults []string
 	if fuzzySearch {
-		return ns.searchFuzzy(query), nil
+		fuzzyResults = ns.searchFuzzy(query, ns.Titles)
+	} else {
+		fuzzyResults = ns.searchExact(query, ns.Titles)
 	}
-	return ns.searchExact(query), nil
+	// emit a note titles' update event
+	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
+	return fuzzyResults, nil
 }
 
-func (ns *NoteServiceImpl) searchFuzzy(query string) []string {
-	matches := fuzzy.RankFind(query, ns.Titles)
+func (ns *NoteServiceImpl) searchFuzzy(query string, titles []string) []string {
+	matches := fuzzy.RankFind(query, titles)
 	sort.Sort(matches)
 	// for every result calculate the hash of the title and get the corresponding keys of titlesIDMap and return a subset of the titlesIDMap with the matching keys
 	result := []string{}
@@ -113,10 +130,10 @@ func (ns *NoteServiceImpl) searchFuzzy(query string) []string {
 	return result
 }
 
-func (ns *NoteServiceImpl) searchExact(query string) []string {
-	for i, title := range ns.Titles {
+func (ns *NoteServiceImpl) searchExact(query string, titles []string) []string {
+	for i, title := range titles {
 		if title == query {
-			return []string{ns.Titles[i]}
+			return []string{titles[i]}
 		}
 	}
 	return []string{}
@@ -144,6 +161,8 @@ func (ns *NoteServiceImpl) CreateNote(note *Note) error {
 	}
 	// add note title to titles array
 	ns.Titles = append(ns.Titles, note.Title)
+	// emit a note titles' update event
+	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
 	return ns.NoteRepo.CreateNote(note)
 }
 
@@ -203,6 +222,8 @@ func (ns *NoteServiceImpl) UpdateNoteTitle(oldTitle, newTitle string) error {
 	}
 	// add new title to titles array
 	ns.Titles = append(ns.Titles, newTitle)
+	// emit a note titles' update event
+	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
 	// no need to encrypt the note since with NoteRepo.GetNote we already have the content encrypted
 	return ns.NoteRepo.CreateNote(note)
 }
@@ -225,6 +246,8 @@ func (ns *NoteServiceImpl) DeleteNote(id int) error {
 			break
 		}
 	}
+	// emit a note titles' update event
+	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
 	return ns.NoteRepo.DeleteNote(id)
 }
 

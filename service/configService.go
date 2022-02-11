@@ -48,11 +48,8 @@ func NewConfigService() ConfigService {
 
 // GetConfig ....
 func (c *ConfigServiceImpl) GetConfig(key string) (string, error) {
-	if !c.Loaded {
-		err := c.LoadConfig()
-		if err != nil {
-			return "", err
-		}
+	if err := c.checkAndLoad(); err != nil {
+		return "", err
 	}
 	c.ConfigMux.RLock()
 	defer c.ConfigMux.RUnlock()
@@ -64,11 +61,8 @@ func (c *ConfigServiceImpl) GetConfig(key string) (string, error) {
 
 // SetConfig ....
 func (c *ConfigServiceImpl) SetConfig(key string, value string) error {
-	if !c.Loaded {
-		err := c.LoadConfig()
-		if err != nil {
-			return err
-		}
+	if err := c.checkAndLoad(); err != nil {
+		return err
 	}
 	c.ConfigMux.Lock()
 	defer c.ConfigMux.Unlock()
@@ -78,10 +72,6 @@ func (c *ConfigServiceImpl) SetConfig(key string, value string) error {
 
 // GetGlobal ....
 func (c *ConfigServiceImpl) GetGlobal(key string) (string, error) {
-	err := c.LoadConfig()
-	if err != nil {
-		return "", err
-	}
 	c.GlobalsMux.RLock()
 	defer c.GlobalsMux.RUnlock()
 	if val, ok := c.Globals[key]; ok {
@@ -139,4 +129,14 @@ func (c *ConfigServiceImpl) SaveConfig() error {
 
 func (c *ConfigServiceImpl) getConfigFilePath() string {
 	return filepath.Join(c.ResourcePath, "config.toml")
+}
+
+func (c *ConfigServiceImpl) checkAndLoad() error {
+	if !c.Loaded {
+		err := c.LoadConfig()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
