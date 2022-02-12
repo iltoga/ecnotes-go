@@ -177,9 +177,10 @@ func main() {
 	}
 	// create a new ui
 	testUI = ui.NewUI(app.NewWithID("testAPP"), configService, noteService)
+	mainWindow := ui.NewMainWindow(testUI)
 
 	// add listeners
-	obsrv.AddListener(observer.EVENT_UPDATE_NOTE_TITLES, testUI.UpdateNoteListWidget())
+	obsrv.AddListener(observer.EVENT_UPDATE_NOTE_TITLES, mainWindow.UpdateNoteListWidget())
 
 	// add some random notes at time interval
 	// go func() {
@@ -193,5 +194,6 @@ func main() {
 	// 		noteService.CreateNote(&note)
 	// 	}
 	// }()
-	testUI.CreateMainWindow()
+	mainWindow.CreateWindow("EcNotesTest", 800, 800, true)
+	testUI.Run()
 }

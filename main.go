@@ -48,24 +48,12 @@ func main() {
 	fmt.Println("Starting...")
 	// create a new ui
 	appUI := ui.NewUI(app.NewWithID("ec-notes"), configService, noteService)
+	mainWidow := ui.NewMainWindow(appUI)
 
 	// add listener to ui service to trigger note list widget update whenever the note title array changes
-	obs.AddListener(observer.EVENT_UPDATE_NOTE_TITLES, appUI.UpdateNoteListWidget())
-	appUI.CreateMainWindow()
-
-	// TODO: move to service (config validation)
-	// keyFile, err := configService.GetConfig("file_key")
-	// if err != nil {
-	// 	fmt.Println(err)
-	// }
-	// crtFile, err := configService.GetConfig("file_crt")
-	// if err != nil {
-	// 	fmt.Println(err)
-	// 	os.Exit(1)
-	// }
-	// fmt.Println("key file:", keyFile)
-	// fmt.Println("cert file:", crtFile)
-	// infinite loop to keep the program running
+	obs.AddListener(observer.EVENT_UPDATE_NOTE_TITLES, mainWidow.UpdateNoteListWidget())
+	mainWidow.CreateWindow("EcNotes", 800, 800, true)
+	appUI.Run()
 }
 
 // SetupCloseHandler creates a 'listener' on a new goroutine which will notify the

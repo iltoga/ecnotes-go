@@ -3,8 +3,6 @@ package ui
 import (
 	"fmt"
 	"log"
-	"sync"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -13,85 +11,31 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
-	"github.com/iltoga/ecnotes-go/service"
 	"github.com/iltoga/ecnotes-go/service/observer"
 )
 
-// UI ....
-type UI interface {
-	CreateMainWindow()
-	AddWindow(name string, w fyne.Window)
-	AddWidget(name string, w fyne.CanvasObject)
-	GetWindow(name string) (fyne.Window, error)
-	GetWidget(name string) (fyne.CanvasObject, error)
+type MainWindow interface {
+	WindowInterface
 	UpdateNoteListWidget() observer.Listener
 }
 
-// UImpl Main ui configuration
-type UImpl struct {
-	app               fyne.App
-	windows           map[string]fyne.Window
-	winMux            *sync.Mutex
-	widgets           map[string]fyne.CanvasObject
-	widMux            *sync.Mutex
-	confSrv           service.ConfigService
-	noteService       service.NoteService
+type MainWindowImpl struct {
+	UImpl
 	titlesDataBinding binding.ExternalStringList
 }
 
-// NewUI UI constructor
-func NewUI(
-	app fyne.App,
-	confSrv service.ConfigService,
-	noteService service.NoteService,
-) *UImpl {
-	return &UImpl{
-		app:         app,
-		windows:     make(map[string]fyne.Window),
-		widgets:     make(map[string]fyne.CanvasObject),
-		winMux:      &sync.Mutex{},
-		widMux:      &sync.Mutex{},
-		confSrv:     confSrv,
-		noteService: noteService,
+func NewMainWindow(ui *UImpl) MainWindow {
+	return &MainWindowImpl{
+		UImpl: *ui,
 	}
-}
-
-// AddWindow add window to map
-func (ui *UImpl) AddWindow(name string, w fyne.Window) {
-	ui.winMux.Lock()
-	ui.windows[name] = w
-	ui.winMux.Unlock()
-}
-
-// AddWidget add widget to map
-func (ui *UImpl) AddWidget(name string, w fyne.CanvasObject) {
-	ui.widMux.Lock()
-	ui.widgets[name] = w
-	ui.widMux.Unlock()
-}
-
-// GetWindow ....
-func (ui *UImpl) GetWindow(name string) (fyne.Window, error) {
-	if w, ok := ui.windows[name]; ok {
-		return w, nil
-	}
-	return nil, fmt.Errorf("window %s not found", name)
-}
-
-// GetWidget ....
-func (ui *UImpl) GetWidget(name string) (fyne.CanvasObject, error) {
-	if w, ok := ui.widgets[name]; ok {
-		return w, nil
-	}
-	return nil, fmt.Errorf("widget %s not found", name)
 }
 
 // CreateMainWindow ....
-func (ui *UImpl) CreateMainWindow() {
+func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bool) {
 	// define main windows
-	w := ui.app.NewWindow("EcNotes")
+	w := ui.app.NewWindow(title)
 	ui.AddWindow("main", w)
-	w.Resize(fyne.NewSize(800, 800))
+	w.Resize(fyne.NewSize(width, height))
 
 	mainWinLoaderLabel := widget.NewLabel("Loading main window...")
 	mainWinLoader := func(msg string) *widget.Label {
@@ -118,7 +62,7 @@ func (ui *UImpl) CreateMainWindow() {
 		// use fuzzy search to find titles that match the search text
 		_, err := ui.noteService.SearchNotes(text, true)
 		if err != nil {
-			ui.showNotification("Error searching notes", err.Error())
+			ui.ShowNotification("Error searching notes", err.Error())
 			return
 		}
 	}
@@ -183,18 +127,16 @@ func (ui *UImpl) CreateMainWindow() {
 		noteContainer.SetMinSize(w.Canvas().Size().Subtract(fyne.NewSize(100, 200)))
 		mainLayout.AddObject(noteContainer)
 	}()
-
-	ui.app.Run()
 }
 
-func (ui *UImpl) runNoteList() fyne.CanvasObject {
+func (ui *MainWindowImpl) runNoteList() fyne.CanvasObject {
 	// load notes into a fyne.List
 	titles := ui.noteService.GetTitles()
 	if len(titles) == 0 {
 		// load notes from db (and populate titles array)
 		_, err := ui.noteService.GetNotes()
 		if err != nil {
-			ui.showNotification("Error", err.Error())
+			ui.ShowNotification("Error", err.Error())
 			return &widget.Card{
 				Title: "Error",
 				Content: widget.NewLabel(
@@ -207,7 +149,7 @@ func (ui *UImpl) runNoteList() fyne.CanvasObject {
 	return ui.createNoteList(titles)
 }
 
-func (ui *UImpl) createNoteList(titles []string) fyne.CanvasObject {
+func (ui *MainWindowImpl) createNoteList(titles []string) fyne.CanvasObject {
 	ui.titlesDataBinding = binding.BindStringList(&titles)
 	noteList := widget.NewListWithData(ui.titlesDataBinding,
 		func() fyne.CanvasObject {
@@ -227,7 +169,7 @@ func (ui *UImpl) createNoteList(titles []string) fyne.CanvasObject {
 }
 
 // UpdateNoteList listener (observer) triggered when the note tiles are updated
-func (ui *UImpl) UpdateNoteListWidget() observer.Listener {
+func (ui *MainWindowImpl) UpdateNoteListWidget() observer.Listener {
 	return observer.Listener{
 		OnNotify: func(titles interface{}, args ...interface{}) {
 			if titles == nil {
@@ -254,7 +196,7 @@ func (ui *UImpl) UpdateNoteListWidget() observer.Listener {
 	}
 }
 
-func (ui *UImpl) runPasswordPopUp(
+func (ui *MainWindowImpl) runPasswordPopUp(
 	w fyne.Window,
 	keyAction common.EncryptionKeyAction,
 	mainWinLoader *widget.Label,
@@ -272,36 +214,36 @@ func (ui *UImpl) runPasswordPopUp(
 				// generate encryption key
 				decKey, err = cryptoUtil.SecureRandomStr(common.ENCRYPTION_KEY_LENGTH)
 				if err != nil {
-					ui.showNotification("Error generating encryption key", err.Error())
+					ui.ShowNotification("Error generating encryption key", err.Error())
 					return
 				}
 				ui.confSrv.SetGlobal(common.CONFIG_ENCRYPTION_KEY, decKey)
 				// encrypt the key with password input in the password entry
 				if encKey, err = cryptoUtil.EncryptMessage(decKey, pwdWg.Text); err != nil {
-					ui.showNotification("Error encrypting encryption key", err.Error())
+					ui.ShowNotification("Error encrypting encryption key", err.Error())
 					return
 				}
 				// save encrypted encryption key to config file
 				ui.confSrv.SetConfig(common.CONFIG_ENCRYPTION_KEY, encKey)
 				if err := ui.confSrv.SaveConfig(); err != nil {
-					ui.showNotification("Error saving configuration", err.Error())
+					ui.ShowNotification("Error saving configuration", err.Error())
 					return
 				}
-				ui.showNotification("Encryption key generated", "")
+				ui.ShowNotification("Encryption key generated", "")
 			case common.EncryptionKeyAction_Decrypt:
 				// decrypt the key with password input in the password entry
 				if encKey, err = ui.confSrv.GetConfig(common.CONFIG_ENCRYPTION_KEY); err != nil {
-					ui.showNotification("Error loading encryption key from app configuration", err.Error())
+					ui.ShowNotification("Error loading encryption key from app configuration", err.Error())
 					return
 				}
 				if decKey, err = cryptoUtil.DecryptMessage(encKey, pwdWg.Text); err != nil {
-					ui.showNotification("Error decrypting encryption key", err.Error())
+					ui.ShowNotification("Error decrypting encryption key", err.Error())
 					return
 				}
 				ui.confSrv.SetGlobal(common.CONFIG_ENCRYPTION_KEY, decKey)
-				ui.showNotification("Encryption key decrypted and stored in memory till app is closed", "")
+				ui.ShowNotification("Encryption key decrypted and stored in memory till app is closed", "")
 			default:
-				ui.showNotification("Error", "Unknown key action")
+				ui.ShowNotification("Error", "Unknown key action")
 			}
 
 			modal.Hide()
@@ -329,9 +271,4 @@ func (ui *UImpl) runPasswordPopUp(
 		w.Canvas(),
 	)
 	return modal
-}
-
-func (ui *UImpl) showNotification(title, contentStr string) {
-	time.Sleep(time.Millisecond * 500)
-	ui.app.SendNotification(fyne.NewNotification(title, contentStr))
 }
