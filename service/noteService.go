@@ -12,7 +12,7 @@ import (
 
 // NoteService ....
 type NoteService interface {
-	GetNote(id int) (*Note, error)
+	GetNoteWithContent(id int) (*Note, error)
 	GetNotes() ([]Note, error)
 	GetTitles() []string
 	SearchNotes(query string, fuzzySearch bool) ([]string, error)
@@ -40,6 +40,7 @@ type Note struct {
 	Title     string `json:"title"`
 	Content   string `json:"content"`
 	Hidden    bool   `json:"hidden"`
+	Encrypted bool   `json:"encrypted"`
 	CreatedAt int64  `json:"created_at"`
 	UpdatedAt int64  `json:"updated_at"`
 }
@@ -59,7 +60,7 @@ func NewNoteService(
 }
 
 // GetNote retreives a note from the db by id and decrypts it
-func (ns *NoteServiceImpl) GetNote(id int) (*Note, error) {
+func (ns *NoteServiceImpl) GetNoteWithContent(id int) (*Note, error) {
 	note, err := ns.NoteRepo.GetNote(id)
 	if err != nil {
 		return nil, err
@@ -72,6 +73,7 @@ func (ns *NoteServiceImpl) GetNote(id int) (*Note, error) {
 }
 
 // GetNotes returns all note titles from the db and populate Titles array and TitlesIDMap with the results
+// note: the note content is returned encrypted
 func (ns *NoteServiceImpl) GetNotes() ([]Note, error) {
 	notes, err := ns.NoteRepo.GetAllNotes()
 	if err != nil {
@@ -79,12 +81,6 @@ func (ns *NoteServiceImpl) GetNotes() ([]Note, error) {
 	}
 	for idx, note := range notes {
 		ns.Titles = append(ns.Titles, note.Title)
-		// decrypt content before returning
-		if err := ns.DecryptNote(&note); err != nil {
-			// TODO: maybe use a different strategy to handle this error. Something like:
-			// - log the error and continue
-			return nil, err
-		}
 		// swap the note with the decrypted one
 		notes[idx] = note
 	}
@@ -108,19 +104,20 @@ func (ns *NoteServiceImpl) SearchNotes(query string, fuzzySearch bool) ([]string
 		}
 	}
 	// search the titles array and return the IDs of the notes that match the query
-	var fuzzyResults []string
+	var searchResult []string
 	if fuzzySearch {
-		fuzzyResults = ns.searchFuzzy(query, ns.Titles)
+		searchResult = ns.searchFuzzy(query, ns.Titles)
 	} else {
-		fuzzyResults = ns.searchExact(query, ns.Titles)
+		searchResult = ns.searchExact(query, ns.Titles)
 	}
 	// emit a note titles' update event
-	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
-	return fuzzyResults, nil
+	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, searchResult)
+	return searchResult, nil
 }
 
 func (ns *NoteServiceImpl) searchFuzzy(query string, titles []string) []string {
-	matches := fuzzy.RankFind(query, titles)
+	// case-insensitive search
+	matches := fuzzy.RankFindFold(query, titles)
 	sort.Sort(matches)
 	// for every result calculate the hash of the title and get the corresponding keys of titlesIDMap and return a subset of the titlesIDMap with the matching keys
 	result := []string{}
@@ -267,6 +264,7 @@ func (ns *NoteServiceImpl) EncryptNote(note *Note) error {
 		return err
 	}
 	note.Content = encryptedContent
+	note.Encrypted = true
 	return nil
 }
 
@@ -286,6 +284,7 @@ func (ns *NoteServiceImpl) DecryptNote(note *Note) error {
 		return err
 	}
 	note.Content = decryptedContent
+	note.Encrypted = false
 	return nil
 }
 

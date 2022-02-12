@@ -60,8 +60,10 @@ func (s *nutsDBSuiteTest) TestCreateAndReadNote() {
 	if err := noteService.CreateNote(newNote); err != nil {
 		t.Error(err)
 	}
+	// this is because when created, the note is encrypted and when read it is decrypted
+	newNote.Encrypted = false
 	// get same note from db
-	note, err := noteService.GetNote(newNote.ID)
+	note, err := noteService.GetNoteWithContent(newNote.ID)
 	if err != nil {
 		t.Error(err)
 	}
@@ -94,7 +96,7 @@ func (s *nutsDBSuiteTest) TestUpdateDeleteNote() {
 	assert.Error(t, err, "key not found in the bucket")
 	assert.False(t, ok, "Old note should not exist anymore")
 	// get same note from db
-	updatedNote, err := noteService.GetNote(newID)
+	updatedNote, err := noteService.GetNoteWithContent(newID)
 	assert.NoError(t, err, "Error getting note with new title")
 	updatedNote.Content = newContent
 	// update note content
@@ -103,8 +105,10 @@ func (s *nutsDBSuiteTest) TestUpdateDeleteNote() {
 
 	// restore unencrypted content to compare
 	updatedNote.Content = newContent
+	// this is because when created or updated, the note is encrypted and when read it is decrypted
+	updatedNote.Encrypted = false
 	// get same note from db
-	updatedNoteFromDB, err := noteService.GetNote(newID)
+	updatedNoteFromDB, err := noteService.GetNoteWithContent(newID)
 	assert.NoError(t, err, "Error getting note with new content from db")
 	assert.Equal(t, updatedNote, updatedNoteFromDB, "Note should be the same")
 }

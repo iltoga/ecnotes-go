@@ -8,6 +8,7 @@ import (
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
 	"github.com/iltoga/ecnotes-go/service"
+	"github.com/iltoga/ecnotes-go/service/observer"
 	toml "github.com/pelletier/go-toml"
 )
 
@@ -17,6 +18,17 @@ var testNote = &service.Note{
 	Content:   "test content",
 	CreatedAt: 1643614680013,
 	UpdatedAt: 1643614680013,
+}
+
+type ObserverMockImpl struct{}
+
+func (obmock *ObserverMockImpl) AddListener(event observer.Event, listener observer.Listener) {
+}
+
+func (obmock *ObserverMockImpl) Remove(event observer.Event) {
+}
+
+func (obmock *ObserverMockImpl) Notify(event observer.Event, data interface{}, args ...interface{}) {
 }
 
 type ConfigServiceMockImpl struct {
@@ -166,73 +178,12 @@ func (nsc *noteConfigServiceMockImpl) SaveConfig() error {
 	panic("not implemented") // TODO: Implement
 }
 
-func TestNoteServiceImpl_GetNote(t *testing.T) {
-	type fields struct {
-		Titles []string
-	}
-	type args struct {
-		id int
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		want    service.Note
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ns := &service.NoteServiceImpl{
-				Titles: tt.fields.Titles,
-			}
-			got, err := ns.GetNote(tt.args.id)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("service.NoteServiceImpl.GetNote() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("service.NoteServiceImpl.GetNote() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestNoteServiceImpl_GetNotes(t *testing.T) {
-	type fields struct {
-		Titles []string
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		want    []service.Note
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ns := &service.NoteServiceImpl{
-				Titles: tt.fields.Titles,
-			}
-			got, err := ns.GetNotes()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("service.NoteServiceImpl.GetNotes() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("service.NoteServiceImpl.GetNotes() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 	type fields struct {
 		Titles        []string
 		NoteRepo      service.NoteServiceRepository
 		ConfigService service.ConfigService
+		Observer      observer.Observer
 	}
 	type args struct {
 		note *service.Note
@@ -252,6 +203,7 @@ func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: "1234567890"},
 					Loaded:  true,
 				},
+				Observer: &ObserverMockImpl{},
 			},
 			args: args{
 				note: testNote,
@@ -265,6 +217,7 @@ func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 				ConfigService: tt.fields.ConfigService,
 				NoteRepo:      tt.fields.NoteRepo,
 				Titles:        tt.fields.Titles,
+				Observer:      tt.fields.Observer,
 			}
 			if err := ns.EncryptNote(tt.args.note); (err != nil) != tt.wantErr {
 				t.Errorf("service.NoteServiceImpl.EncryptNote() error = %v, wantErr %v", err, tt.wantErr)
@@ -285,6 +238,7 @@ func TestNoteServiceImpl_SearchNotes(t *testing.T) {
 		NoteRepo      service.NoteServiceRepository
 		ConfigService service.ConfigService
 		Titles        []string
+		Observer      observer.Observer
 	}
 	type args struct {
 		query       string
@@ -305,7 +259,8 @@ func TestNoteServiceImpl_SearchNotes(t *testing.T) {
 					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: "1234567890"},
 					Loaded:  true,
 				},
-				Titles: noteRepositoryMock.mockedTitles,
+				Titles:   noteRepositoryMock.mockedTitles,
+				Observer: &ObserverMockImpl{},
 			},
 			args: args{
 				query:       "Mandela quote",
@@ -324,15 +279,15 @@ func TestNoteServiceImpl_SearchNotes(t *testing.T) {
 					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: "1234567890"},
 					Loaded:  true,
 				},
-				Titles: noteRepositoryMock.mockedTitles,
+				Titles:   noteRepositoryMock.mockedTitles,
+				Observer: &ObserverMockImpl{},
 			},
 			args: args{
-				query:       "quote",
+				query:       "mand",
 				fuzzySearch: true,
 			},
 			want: []string{
 				"Mandela quote",
-				"Oprah Winfrey quote",
 			},
 			wantErr: false,
 		},
@@ -343,6 +298,7 @@ func TestNoteServiceImpl_SearchNotes(t *testing.T) {
 				NoteRepo:      tt.fields.NoteRepo,
 				ConfigService: tt.fields.ConfigService,
 				Titles:        tt.fields.Titles,
+				Observer:      tt.fields.Observer,
 			}
 			got, err := ns.SearchNotes(tt.args.query, tt.args.fuzzySearch)
 			if (err != nil) != tt.wantErr {

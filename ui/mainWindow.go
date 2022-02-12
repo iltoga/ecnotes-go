@@ -115,7 +115,12 @@ func (ui *UImpl) CreateMainWindow() {
 	ui.AddWidget("search_box", searchBox)
 	searchBox.OnChanged = func(text string) {
 		// when search box is changed
-		fmt.Println("searchBox changed:", text)
+		// use fuzzy search to find titles that match the search text
+		_, err := ui.noteService.SearchNotes(text, true)
+		if err != nil {
+			ui.showNotification("Error searching notes", err.Error())
+			return
+		}
 	}
 
 	// create buttons
@@ -211,34 +216,12 @@ func (ui *UImpl) createNoteList(titles []string) fyne.CanvasObject {
 		func(i binding.DataItem, o fyne.CanvasObject) {
 			o.(*widget.Label).Bind(i.(binding.String))
 		})
-	// noteList := widget.NewList(
-	// 	// lets change item count from 3 to 30
-	// 	func() int {
-	// 		notesCount := len(titles)
-	// 		return notesCount
-	// 	},
-	// 	func() fyne.CanvasObject {
-	// 		return widget.NewLabel("")
-	// 	},
-	// 	// last one
-	// 	func(lii widget.ListItemID, co fyne.CanvasObject) {
-	// 		// update data of widget
-	// 		co.(*widget.Label).SetText(titles[lii])
-	// 	},
-	// )
+
 	ui.AddWidget("note_list", noteList)
 	noteList.OnSelected = func(lii widget.ListItemID) {
 		// when item is selected
 		fmt.Println("DEBUG: note list item selected:", lii)
 	}
-
-	// add random titles to data in a goroutine
-	// go func() {
-	// 	for i := 0; i < 10; i++ {
-	// 		time.Sleep(time.Second)
-	// 		ui.titlesDataBinding.Append(fmt.Sprintf("title %d", i))
-	// 	}
-	// }()
 
 	return noteList
 }
@@ -262,7 +245,6 @@ func (ui *UImpl) UpdateNoteListWidget() observer.Listener {
 					return
 				}
 			}
-			fmt.Printf("DEBUG: updateNoteListWidget called. note titles are:\n%#v\n", titles)
 			// update note list widget
 			// if w, ok := ui.widgets["note_list"]; ok {
 			// 	widgetList := w.(*widget.List)

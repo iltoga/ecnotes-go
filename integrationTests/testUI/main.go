@@ -2,10 +2,7 @@ package main
 
 import (
 	"errors"
-	"math/rand"
-	"strconv"
 	"sync"
-	"time"
 
 	"fyne.io/fyne/v2/app"
 	"github.com/iltoga/ecnotes-go/lib/common"
@@ -185,16 +182,16 @@ func main() {
 	obsrv.AddListener(observer.EVENT_UPDATE_NOTE_TITLES, testUI.UpdateNoteListWidget())
 
 	// add some random notes at time interval
-	go func() {
-		time.Sleep(time.Second * 10)
-		for {
-			time.Sleep(time.Millisecond * 2000)
-			note := service.Note{
-				Title:   "Random note " + strconv.Itoa(rand.Intn(10000)),
-				Content: "Random content",
-			}
-			noteService.CreateNote(&note)
-		}
-	}()
+	// go func() {
+	// 	time.Sleep(time.Second * 10)
+	// 	for {
+	// 		time.Sleep(time.Millisecond * 2000)
+	// 		note := service.Note{
+	// 			Title:   "Random note " + strconv.Itoa(rand.Intn(10000)),
+	// 			Content: "Random content",
+	// 		}
+	// 		noteService.CreateNote(&note)
+	// 	}
+	// }()
 	testUI.CreateMainWindow()
 }
