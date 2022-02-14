@@ -15,7 +15,7 @@ import (
 var (
 	encKey = "d8fe4aa6f1579d7bf71f43da885947b25892d4015d89a08ce153d38a72567c4d04151525d1c43720bc578e2f2be3b5ba364eb571be6af7240d3929cc6d145a2bb4efb8b2fbd698b05e8962a6c2327ed931d97244aa301663290ee1fefdb4c217f6f4d21e090e228d19dfbecea2f6a69caa9190349c7a4e449e90de79e460220c2e3cc9fb99788d0b4e8a3fe527d1aa5bcb6a8fb791a596e549a5046a157ba6b1414493b8c678512ff2663120225371aabc52ea3b38e947754eeae58e730c8a9655b15152f9a37a22ab66fa3de1de16daeb9be652eb61f66907c0a7cc9f314754d36bea97cf71e97d0eb4d645f314b8e82188c4e7e9dffada184d75183cc4b85b3eec8bc95d36bf6dd3a37d01a3d47c248ec11429a3686d281ac6bb90"
 	decKey = "HsNARwACWCF22HKtZEALH8YkvfFlOqvGnu1O0RVlJGA97nD5JtkEp0gpV6Pvb19zKdRtKbQ1dS1oVCGBdItpppwaS1za3yA3iidSay0TM1Rzda1tI6xsV3djwJpAKniQNZBej1Zvw6ltAB5v6yOUdRESjEqvLyuP2UUm6dJCdAGwBR2Su1UP9v19n5wmz9g8n8OGzNfAg3S6JX1cK5M7wDcncNUd2UUzNlYU242kS1bPUYT5Lfn4qq9d4LjieAZ6"
-	obsrv  = observer.NewObserver()
+	obs    = observer.NewObserver()
 	testUI *ui.UImpl
 )
 
@@ -30,34 +30,41 @@ func NewNoteRepositoryMock() *NoteRepositoryMockImpl {
 	return &NoteRepositoryMockImpl{
 		mockedNotes: []service.Note{
 			{
-				ID:      1,
-				Title:   "Mandela quote",
-				Content: "The greatest glory in living lies not in never falling, but in rising every time we fall. -Nelson Mandela",
+				ID:        1,
+				Title:     "Mandela quote",
+				Content:   "The greatest glory in living lies not in never falling, but in rising every time we fall. -Nelson Mandela",
+				CreatedAt: 1644832171924,
+				UpdatedAt: 1644832171924,
 			},
 			{
-				ID:      2,
-				Title:   "The way to get started is to quit talking and begin doing",
-				Content: "Disney is the best company ever. - Walt Disney",
+				ID:        2,
+				Title:     "The way to get started is to quit talking and begin doing",
+				Content:   "Disney is the best company ever. - Walt Disney",
+				Hidden:    true,
+				CreatedAt: 1644832181924,
+				UpdatedAt: 1644832181924,
 			},
 			{
-				ID:      3,
-				Title:   "Oprah Winfrey quote",
-				Content: "If you look at what you have in life, you'll always have more. If you look at what you don't have in life, you'll never have enough",
+				ID:        3,
+				Title:     "Oprah Winfrey quote",
+				Content:   "If you look at what you have in life, you'll always have more. If you look at what you don't have in life, you'll never have enough",
+				CreatedAt: 1644832171924,
+				UpdatedAt: 1644832171924,
 			},
 			{
-				ID:      4,
-				Title:   "The best is yet to come, Jhon Lennon",
-				Content: "Life is what happens when you're busy making other plans",
+				ID:        4,
+				Title:     "The best is yet to come, Jhon Lennon",
+				Content:   "Life is what happens when you're busy making other plans",
+				Hidden:    true,
+				CreatedAt: 1644832271924,
+				UpdatedAt: 1644832274924,
 			},
 			{
-				ID:      5,
-				Title:   "The future belongs to those who believe in the beauty of their dreams",
-				Content: "Eleanor Roosevelt",
-			},
-			{
-				ID:      6,
-				Title:   "The best is yet to come, Jhon Lennon",
-				Content: "Life is what happens when you're busy making other plans",
+				ID:        5,
+				Title:     "The future belongs to those who believe in the beauty of their dreams",
+				Content:   "Eleanor Roosevelt",
+				CreatedAt: 1644832171924,
+				UpdatedAt: 1644832171924,
 			},
 		},
 		mockedTitles: []string{
@@ -84,13 +91,14 @@ func (nsr *NoteRepositoryMockImpl) GetAllNotes() ([]service.Note, error) {
 		}
 	}
 	nsr.mockedTitles = mocks.mockedTitles
-	obsrv.Notify(observer.EVENT_UPDATE_NOTE_TITLES, nsr.mockedTitles)
+	obs.Notify(observer.EVENT_UPDATE_NOTE_TITLES, nsr.mockedTitles)
 	return nsr.mockedNotes, nil
 }
 
 // GetNote ....
 func (nsr *NoteRepositoryMockImpl) GetNote(id int) (*service.Note, error) {
 	for _, note := range nsr.mockedNotes {
+		note.ID = nsr.GetIDFromTitle(note.Title)
 		if note.ID == id {
 			return &note, nil
 		}
@@ -102,25 +110,27 @@ func (nsr *NoteRepositoryMockImpl) GetNote(id int) (*service.Note, error) {
 func (nsr *NoteRepositoryMockImpl) CreateNote(note *service.Note) error {
 	nsr.mockedNotes = append(nsr.mockedNotes, *note)
 	nsr.mockedTitles = append(nsr.mockedTitles, note.Title)
-	obsrv.Notify(observer.EVENT_UPDATE_NOTE_TITLES, nsr.mockedTitles)
+	obs.Notify(observer.EVENT_UPDATE_NOTE_TITLES, nsr.mockedTitles)
 	return nil
 }
 
 // UpdateNote ....
 func (nsr *NoteRepositoryMockImpl) UpdateNote(note *service.Note) error {
 	for i, n := range nsr.mockedNotes {
+		note.ID = nsr.GetIDFromTitle(note.Title)
 		if n.ID == note.ID {
 			nsr.mockedNotes[i] = *note
 			return nil
 		}
 	}
-	obsrv.Notify(observer.EVENT_UPDATE_NOTE_TITLES, nsr.mockedTitles)
+	obs.Notify(observer.EVENT_UPDATE_NOTE_TITLES, nsr.mockedTitles)
 	return errors.New(common.ERR_NOTE_NOT_FOUND)
 }
 
 // DeleteNote ....
 func (nsr *NoteRepositoryMockImpl) DeleteNote(id int) error {
 	for i, n := range nsr.mockedNotes {
+		n.ID = nsr.GetIDFromTitle(n.Title)
 		if n.ID == id {
 			nsr.mockedNotes = append(nsr.mockedNotes[:i], nsr.mockedNotes[i+1:]...)
 			for j, t := range nsr.mockedTitles {
@@ -129,7 +139,7 @@ func (nsr *NoteRepositoryMockImpl) DeleteNote(id int) error {
 					break
 				}
 			}
-			obsrv.Notify(observer.EVENT_UPDATE_NOTE_TITLES, nsr.mockedTitles)
+			obs.Notify(observer.EVENT_UPDATE_NOTE_TITLES, nsr.mockedTitles)
 			return nil
 		}
 	}
@@ -173,14 +183,19 @@ func main() {
 	noteService := &service.NoteServiceImpl{
 		NoteRepo:      noteRepoMocked,
 		ConfigService: configService,
-		Observer:      obsrv,
+		Observer:      obs,
 	}
 	// create a new ui
-	testUI = ui.NewUI(app.NewWithID("testAPP"), configService, noteService)
+	testUI = ui.NewUI(app.NewWithID("testAPP"), configService, noteService, obs)
 	mainWindow := ui.NewMainWindow(testUI)
 
 	// add listeners
-	obsrv.AddListener(observer.EVENT_UPDATE_NOTE_TITLES, mainWindow.UpdateNoteListWidget())
+	obs.AddListener(observer.EVENT_UPDATE_NOTE_TITLES, mainWindow.UpdateNoteListWidget())
+
+	mainWindow.CreateWindow("EcNotesTest", 800, 800, true)
+	noteDetailWindow := ui.NewNoteDetailsWindow(testUI, new(service.Note))
+	obs.AddListener(observer.EVENT_NOTE_SELECTED, noteDetailWindow.UpdateNoteDetailsWidget())
+	noteDetailWindow.CreateWindow("testNoteDetails", 600, 400, true)
 
 	// add some random notes at time interval
 	// go func() {
@@ -194,6 +209,6 @@ func main() {
 	// 		noteService.CreateNote(&note)
 	// 	}
 	// }()
-	mainWindow.CreateWindow("EcNotesTest", 800, 800, true)
+
 	testUI.Run()
 }

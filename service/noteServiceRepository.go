@@ -119,15 +119,12 @@ func (nsr *NoteServiceRepositoryImpl) CreateNote(note *Note) error {
 	if err != nil {
 		return err
 	}
-	if err = nsr.db.Update(
+	return nsr.db.Update(
 		func(tx *nutsdb.Tx) error {
 			key := key
 			val := value
 			return tx.Put(nsr.bucket, key, val, 0)
-		}); err != nil {
-		return err
-	}
-	return nil
+		})
 }
 
 // UpdateNote update a note in the db
@@ -135,7 +132,7 @@ func (nsr *NoteServiceRepositoryImpl) UpdateNote(note *Note) error {
 	if exists, _ := nsr.NoteExists(note.ID); !exists {
 		return errors.New(common.ERR_NOTE_NOT_FOUND)
 	}
-	if err := nsr.db.Update(
+	return nsr.db.Update(
 		func(tx *nutsdb.Tx) error {
 			key := nsr.getDBKeyFromID(note.ID)
 			val, err := common.MarshalJSON(note)
@@ -143,23 +140,17 @@ func (nsr *NoteServiceRepositoryImpl) UpdateNote(note *Note) error {
 				return err
 			}
 			return tx.Put(nsr.bucket, key, val, 0)
-		}); err != nil {
-		return err
-	}
-	return nil
+		})
 }
 
 // DeleteNote deletes a note from the db
 func (nsr *NoteServiceRepositoryImpl) DeleteNote(id int) error {
 	// delete note by id
-	if err := nsr.db.Update(
+	return nsr.db.Update(
 		func(tx *nutsdb.Tx) error {
 			key := nsr.getDBKeyFromID(id)
 			return tx.Delete(nsr.bucket, key)
-		}); err != nil {
-		return err
-	}
-	return nil
+		})
 }
 
 // NoteExists checks if a note exists in the db

@@ -30,7 +30,7 @@ func NewMainWindow(ui *UImpl) MainWindow {
 	}
 }
 
-// CreateMainWindow ....
+// CreateWindow ....
 func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bool) {
 	// define main windows
 	w := ui.app.NewWindow(title)
@@ -55,7 +55,7 @@ func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bo
 
 	// create main layout
 	searchBox := widget.NewEntry()
-	searchBox.SetPlaceHolder("Search in titles")
+	searchBox.SetPlaceHolder("Search note titles")
 	ui.AddWidget("search_box", searchBox)
 	searchBox.OnChanged = func(text string) {
 		// when search box is changed
@@ -120,6 +120,9 @@ func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bo
 	// create the password modal window
 	modal := ui.runPasswordPopUp(w, common.EncryptionKeyAction_Decrypt, mainWinLoaderLabel, ch)
 	modal.Show()
+	if pwdWg, err := ui.GetWidget("password_popup_pwd"); err == nil {
+		ui.SetFocusOnWidget(w, pwdWg.(*widget.Entry))
+	}
 
 	go func() {
 		<-ch
@@ -163,12 +166,21 @@ func (ui *MainWindowImpl) createNoteList(titles []string) fyne.CanvasObject {
 	noteList.OnSelected = func(lii widget.ListItemID) {
 		// when item is selected
 		fmt.Println("DEBUG: note list item selected:", lii)
+		// get note from db
+		title := titles[lii]
+		noteID := ui.noteService.GetNoteIDFromTitle(title)
+		note, err := ui.noteService.GetNoteWithContent(noteID)
+		if err != nil {
+			ui.ShowNotification("Error Loading note from db", err.Error())
+			return
+		}
+		ui.GetObserver().Notify(observer.EVENT_NOTE_SELECTED, note)
 	}
 
 	return noteList
 }
 
-// UpdateNoteList listener (observer) triggered when the note tiles are updated
+// UpdateNoteList listener (observer) triggered when the note tiles are u
 func (ui *MainWindowImpl) UpdateNoteListWidget() observer.Listener {
 	return observer.Listener{
 		OnNotify: func(titles interface{}, args ...interface{}) {
@@ -187,11 +199,6 @@ func (ui *MainWindowImpl) UpdateNoteListWidget() observer.Listener {
 					return
 				}
 			}
-			// update note list widget
-			// if w, ok := ui.widgets["note_list"]; ok {
-			// 	widgetList := w.(*widget.List)
-			// 	widgetList.Refresh()
-			// }
 		},
 	}
 }
@@ -203,57 +210,39 @@ func (ui *MainWindowImpl) runPasswordPopUp(
 	ch chan bool,
 ) (modal *widget.PopUp) {
 	var (
-		encKey, decKey string
-		err            error
-		popUpText      = widget.NewLabel("Enter password")
-		pwdWg          = widget.NewPasswordEntry()
-		btnWg          = widget.NewButton("OK", func() {
-			// generate encryption key, encrypt with password and save to file
-			switch keyAction {
-			case common.EncryptionKeyAction_Generate:
-				// generate encryption key
-				decKey, err = cryptoUtil.SecureRandomStr(common.ENCRYPTION_KEY_LENGTH)
-				if err != nil {
-					ui.ShowNotification("Error generating encryption key", err.Error())
-					return
-				}
-				ui.confSrv.SetGlobal(common.CONFIG_ENCRYPTION_KEY, decKey)
-				// encrypt the key with password input in the password entry
-				if encKey, err = cryptoUtil.EncryptMessage(decKey, pwdWg.Text); err != nil {
-					ui.ShowNotification("Error encrypting encryption key", err.Error())
-					return
-				}
-				// save encrypted encryption key to config file
-				ui.confSrv.SetConfig(common.CONFIG_ENCRYPTION_KEY, encKey)
-				if err := ui.confSrv.SaveConfig(); err != nil {
-					ui.ShowNotification("Error saving configuration", err.Error())
-					return
-				}
-				ui.ShowNotification("Encryption key generated", "")
-			case common.EncryptionKeyAction_Decrypt:
-				// decrypt the key with password input in the password entry
-				if encKey, err = ui.confSrv.GetConfig(common.CONFIG_ENCRYPTION_KEY); err != nil {
-					ui.ShowNotification("Error loading encryption key from app configuration", err.Error())
-					return
-				}
-				if decKey, err = cryptoUtil.DecryptMessage(encKey, pwdWg.Text); err != nil {
-					ui.ShowNotification("Error decrypting encryption key", err.Error())
-					return
-				}
-				ui.confSrv.SetGlobal(common.CONFIG_ENCRYPTION_KEY, decKey)
-				ui.ShowNotification("Encryption key decrypted and stored in memory till app is closed", "")
-			default:
-				ui.ShowNotification("Error", "Unknown key action")
+		pwdWg = widget.NewPasswordEntry()
+		// close the modal window when the password is submitted
+		clearAndClose = func() {
+			if modal.Visible() {
+				modal.Hide()
 			}
-
-			modal.Hide()
 			// reset password entry for security
 			pwdWg.SetText("")
 			// hide main window loader
 			mainWinLoader.Hidden = true
+
+			// set focus on serach box
+			if wg, err := ui.GetWidget("search_box"); err == nil {
+				ui.SetFocusOnWidget(w, wg.(*widget.Entry))
+			}
 			ch <- true
+		}
+
+		popUpText = widget.NewLabel("Enter password")
+		btnWg     = widget.NewButton("OK", func() {
+			ui.submitPassword(keyAction, pwdWg.Text)
+			clearAndClose()
 		})
 	)
+
+	pwdWg.OnSubmitted = func(pwd string) {
+		ui.submitPassword(keyAction, pwdWg.Text)
+		clearAndClose()
+	}
+
+	// add widgets to widgets map
+	ui.AddWidget("password_popup_pwd", pwdWg)
+	ui.AddWidget("password_popup_btn", btnWg)
 
 	if keyAction == common.EncryptionKeyAction_Decrypt {
 		btnWg.SetText("Enter password to Decrypt Key")
@@ -271,4 +260,48 @@ func (ui *MainWindowImpl) runPasswordPopUp(
 		w.Canvas(),
 	)
 	return modal
+}
+
+func (ui *MainWindowImpl) submitPassword(keyAction common.EncryptionKeyAction, password string) {
+	var (
+		encKey, decKey string
+		err            error
+	)
+	// generate encryption key, encrypt with password and save to file
+	switch keyAction {
+	case common.EncryptionKeyAction_Generate:
+		// generate encryption key
+		decKey, err = cryptoUtil.SecureRandomStr(common.ENCRYPTION_KEY_LENGTH)
+		if err != nil {
+			ui.ShowNotification("Error generating encryption key", err.Error())
+			return
+		}
+		ui.confSrv.SetGlobal(common.CONFIG_ENCRYPTION_KEY, decKey)
+		// encrypt the key with password input in the password entry
+		if encKey, err = cryptoUtil.EncryptMessage(decKey, password); err != nil {
+			ui.ShowNotification("Error encrypting encryption key", err.Error())
+			return
+		}
+		// save encrypted encryption key to config file
+		ui.confSrv.SetConfig(common.CONFIG_ENCRYPTION_KEY, encKey)
+		if err := ui.confSrv.SaveConfig(); err != nil {
+			ui.ShowNotification("Error saving configuration", err.Error())
+			return
+		}
+		ui.ShowNotification("Encryption key generated", "")
+	case common.EncryptionKeyAction_Decrypt:
+		// decrypt the key with password input in the password entry
+		if encKey, err = ui.confSrv.GetConfig(common.CONFIG_ENCRYPTION_KEY); err != nil {
+			ui.ShowNotification("Error loading encryption key from app configuration", err.Error())
+			return
+		}
+		if decKey, err = cryptoUtil.DecryptMessage(encKey, password); err != nil {
+			ui.ShowNotification("Error decrypting encryption key", err.Error())
+			return
+		}
+		ui.confSrv.SetGlobal(common.CONFIG_ENCRYPTION_KEY, decKey)
+		ui.ShowNotification("Encryption key decrypted and stored in memory till app is closed", "")
+	default:
+		ui.ShowNotification("Error", "Unknown key action")
+	}
 }

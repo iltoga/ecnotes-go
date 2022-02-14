@@ -23,6 +23,7 @@ type NoteService interface {
 	DeleteNote(id int) error
 	EncryptNote(note *Note) error
 	DecryptNote(note *Note) error
+	GetNoteIDFromTitle(title string) int
 }
 
 // NoteServiceImpl ....
@@ -57,6 +58,11 @@ func NewNoteService(
 		Observer:      observer,
 		Titles:        []string{},
 	}
+}
+
+// GetNoteIDFromTitle returns the note ID from the title
+func (ns *NoteServiceImpl) GetNoteIDFromTitle(title string) int {
+	return ns.NoteRepo.GetIDFromTitle(title)
 }
 
 // GetNote retreives a note from the db by id and decrypts it

@@ -47,7 +47,7 @@ func main() {
 
 	fmt.Println("Starting...")
 	// create a new ui
-	appUI := ui.NewUI(app.NewWithID("ec-notes"), configService, noteService)
+	appUI := ui.NewUI(app.NewWithID("ec-notes"), configService, noteService, obs)
 	mainWidow := ui.NewMainWindow(appUI)
 
 	// add listener to ui service to trigger note list widget update whenever the note title array changes

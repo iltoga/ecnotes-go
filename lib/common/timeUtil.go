@@ -17,10 +17,10 @@ func GetCurrentTime() string {
 
 // GetCurrentTimestamp get unix timestamp in milliseconds
 func GetCurrentTimestamp() int64 {
-	return time.Now().UnixNano() / int64(time.Millisecond)
+	return time.Now().UnixMilli()
 }
 
 // TimestampToTime convert unix timestamp to time
 func TimestampToTime(timestamp int64) time.Time {
-	return time.Unix(0, timestamp*int64(time.Millisecond))
+	return time.UnixMilli(timestamp)
 }

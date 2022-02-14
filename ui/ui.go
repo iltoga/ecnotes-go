@@ -7,6 +7,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"github.com/iltoga/ecnotes-go/service"
+	"github.com/iltoga/ecnotes-go/service/observer"
 )
 
 // UI ....
@@ -18,6 +19,9 @@ type UI interface {
 	ShowNotification(title, contentStr string)
 	Run()
 	Stop()
+	SetFocusOnWidget(w fyne.Window, wg fyne.CanvasObject)
+	GetNoteService() service.NoteService
+	GetObserver() observer.Observer
 }
 
 // UImpl Main ui configuration
@@ -29,6 +33,7 @@ type UImpl struct {
 	widMux      *sync.Mutex
 	confSrv     service.ConfigService
 	noteService service.NoteService
+	obs         observer.Observer
 }
 
 // NewUI UI constructor
@@ -36,6 +41,7 @@ func NewUI(
 	app fyne.App,
 	confSrv service.ConfigService,
 	noteService service.NoteService,
+	obs observer.Observer,
 ) *UImpl {
 	return &UImpl{
 		app:         app,
@@ -45,7 +51,18 @@ func NewUI(
 		widMux:      &sync.Mutex{},
 		confSrv:     confSrv,
 		noteService: noteService,
+		obs:         obs,
 	}
+}
+
+// GetNoteService ....
+func (ui *UImpl) GetNoteService() service.NoteService {
+	return ui.noteService
+}
+
+// GetObserver ....
+func (ui *UImpl) GetObserver() observer.Observer {
+	return ui.obs
 }
 
 // Run ....
@@ -56,6 +73,11 @@ func (ui *UImpl) Run() {
 // Stop ....
 func (ui *UImpl) Stop() {
 	ui.app.Quit()
+}
+
+// SetFocusOnWidget ....
+func (ui *UImpl) SetFocusOnWidget(w fyne.Window, wg fyne.Focusable) {
+	w.Canvas().Focus(wg)
 }
 
 // AddWindow add window to map
