@@ -19,7 +19,7 @@ type NoteService interface {
 	CreateNote(note *Note) error
 	UpdateNoteContent(note *Note) error
 
-	UpdateNoteTitle(oldTitle, newTitle string) error
+	UpdateNoteTitle(oldTitle, newTitle string) (noteID int, err error)
 	DeleteNote(id int) error
 	EncryptNote(note *Note) error
 	DecryptNote(note *Note) error
@@ -164,9 +164,16 @@ func (ns *NoteServiceImpl) CreateNote(note *Note) error {
 	}
 	// add note title to titles array
 	ns.Titles = append(ns.Titles, note.Title)
-	// emit a note titles' update event
+	// emit a note titles' update event that will update the note titles in the UI (main window)
 	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
-	return ns.NoteRepo.CreateNote(note)
+	oldContent := note.Content
+	err := ns.NoteRepo.CreateNote(note)
+	// TODO: maybe refactor Crete/Update note to encrypt content but return the original (unencrypted) content
+	// this is to avoid showing the note content encrypted in the UI
+	note.Content = oldContent
+	// emit a note created event that will update the note details in the UI (note details window)
+	ns.Observer.Notify(observer.EVENT_CREATE_NOTE, note, common.WindowMode_Edit, common.WindowAction_Update)
+	return err
 }
 
 // UpdateNoteContent update the content of an existing note
@@ -185,50 +192,69 @@ func (ns *NoteServiceImpl) UpdateNoteContent(note *Note) error {
 	if err := ns.EncryptNote(note); err != nil {
 		return err
 	}
-	return ns.NoteRepo.UpdateNote(note)
+	oldContent := note.Content
+	err := ns.NoteRepo.UpdateNote(note)
+	// TODO: maybe refactor Crete/Update note to encrypt content but return the original (unencrypted) content
+	// this is to avoid showing the note content encrypted in the UI
+	note.Content = oldContent
+	// emit a note created event that will update the note details in the UI (note details window)
+	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE, note, common.WindowMode_Edit, common.WindowAction_Update)
+	return err
 }
 
 // UpdateNoteTitle update the title of an existing UpdateNote
 // since the title is used as a key in db we need to delete the old note and create a new one
 // the new note is a copy of the old note with the new title
-func (ns *NoteServiceImpl) UpdateNoteTitle(oldTitle, newTitle string) error {
-	if newTitle == "" {
-		return errors.New(common.ERR_NOTE_TITLE_EMPTY)
-	}
-	if newTitle == oldTitle {
-		return errors.New(common.ERR_NOTE_TITLE_SAME)
-	}
-	// make sure the note already exists since we are updating the content
+func (ns *NoteServiceImpl) UpdateNoteTitle(oldTitle, newTitle string) (noteID int, err error) {
 	oldIndex := ns.NoteRepo.GetIDFromTitle(oldTitle)
-	if ok, err := ns.NoteRepo.NoteExists(oldIndex); err != nil {
-		return err
-	} else if !ok {
-		return errors.New(common.ERR_NOTE_NOT_FOUND)
+	noteID = oldIndex
+	if newTitle == "" {
+		err = errors.New(common.ERR_NOTE_TITLE_EMPTY)
+		return
 	}
-	note, err := ns.NoteRepo.GetNote(oldIndex)
+	// if oldTitle is empty or same as newTitle, it means that title hasn't been changed.	so we can just update the note content
+	if oldTitle == "" || newTitle == oldTitle {
+		return
+	}
+
+	// make sure the note already exists since we are updating the content
+	var ok bool
+	if ok, err = ns.NoteRepo.NoteExists(oldIndex); err != nil {
+		return
+	} else if !ok {
+		err = errors.New(common.ERR_NOTE_NOT_FOUND)
+		return
+	}
+	var note *Note
+	note, err = ns.NoteRepo.GetNote(oldIndex)
 	if err != nil {
-		return err
+		return
 	}
 	note.Title = newTitle
 	newIndex := ns.NoteRepo.GetIDFromTitle(newTitle)
 	note.ID = newIndex
 	note.UpdatedAt = common.GetCurrentTimestamp()
-	if err := ns.NoteRepo.DeleteNote(oldIndex); err != nil {
-		return err
+
+	// TODO: wrap this block in a transaction
+	if err = ns.NoteRepo.DeleteNote(oldIndex); err != nil {
+		return
 	}
-	// delete old title from titles array
+	if err = ns.NoteRepo.CreateNote(note); err != nil {
+		return
+	}
+	noteID = newIndex
+
+	// update titles array
 	for i, title := range ns.Titles {
 		if title == oldTitle {
-			ns.Titles = append(ns.Titles[:i], ns.Titles[i+1:]...)
+			ns.Titles[i] = newTitle
 			break
 		}
 	}
-	// add new title to titles array
-	ns.Titles = append(ns.Titles, newTitle)
 	// emit a note titles' update event
 	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
-	// no need to encrypt the note since with NoteRepo.GetNote we already have the content encrypted
-	return ns.NoteRepo.CreateNote(note)
+	// Note: this time no need to emit a note updated event since everytime we update a note title, we also update the note content
+	return
 }
 
 // DeleteNote ....
@@ -251,6 +277,7 @@ func (ns *NoteServiceImpl) DeleteNote(id int) error {
 	}
 	// emit a note titles' update event
 	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
+	// Note: no need to emit a note update/delete event. since we are deleting a note, we don't need to update the note details in the UI, but just clear the data and hide the note details window
 	return ns.NoteRepo.DeleteNote(id)
 }
 

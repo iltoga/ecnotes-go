@@ -43,16 +43,24 @@ func init() {
 }
 
 func main() {
-	SetupCloseHandler()
+	// TODO: delete this if not needed (fyne framework already takes care of keeping the app running till we close the main window)
+	// SetupCloseHandler()
 
 	fmt.Println("Starting...")
 	// create a new ui
 	appUI := ui.NewUI(app.NewWithID("ec-notes"), configService, noteService, obs)
-	mainWidow := ui.NewMainWindow(appUI)
+	mainWindow := ui.NewMainWindow(appUI)
 
 	// add listener to ui service to trigger note list widget update whenever the note title array changes
-	obs.AddListener(observer.EVENT_UPDATE_NOTE_TITLES, mainWidow.UpdateNoteListWidget())
-	mainWidow.CreateWindow("EcNotes", 800, 800, true)
+	obs.AddListener(observer.EVENT_UPDATE_NOTE_TITLES, mainWindow.UpdateNoteListWidget())
+	obs.AddListener(observer.EVENT_CREATE_NOTE, mainWindow.UpdateNoteListWidget())
+	obs.AddListener(observer.EVENT_UPDATE_NOTE, mainWindow.UpdateNoteListWidget())
+
+	// start the ui
+
+	// TODO: load some defaults from configuration?
+	emptyOptions := make(map[string]interface{})
+	mainWindow.CreateWindow("EcNotes", 800, 800, true, emptyOptions)
 	appUI.Run()
 }
 

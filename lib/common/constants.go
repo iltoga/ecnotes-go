@@ -4,6 +4,9 @@ import "time"
 
 // EncryptionKeyAction enum to describe the encryption key action
 type EncryptionKeyAction int64
+type WindowAspect int64
+type WindowMode int64
+type WindowAction int64
 
 const (
 	// WIDGET_NOTES_REFRESH_INTERVAL_MILLIS is the default refresh interval for the notes widget
@@ -17,4 +20,33 @@ const (
 	EncryptionKeyAction_Decrypt
 	EncryptionKeyAction_Encrypt
 	EncryptionKeyAction_Verify
+
+	WindowAspect_Normal WindowAspect = iota
+	WindowAspect_FullScreen
+
+	WindowMode_Edit WindowMode = iota // edit/update mode
+	WindowMode_View                   // read only
+
+	WindowAction_New    WindowAction = iota // window with new data (create mode)
+	WindowAction_Update                     // update data in window (update mode)
+	WindowAction_Delete                     // prepare to delete data (delete mode)
+
+	OPT_WINDOW_ASPECT = "window_aspect"
+	OPT_WINDOW_MODE   = "window_mode"
+	OPT_WINDOW_ACTION = "window_action"
+
+	WIN_MAIN         = "main"
+	WIN_NOTE_DETAILS = "note_details"
+
+	BTN_CANCEL       = "btn_cancel"
+	BTN_SAVE_NEW     = "btn_save_new"
+	BTN_SAVE_UPDATED = "btn_save_updated"
+	BTN_DELETE       = "btn_delete"
+	BTN_OK           = "btn_ok"
+
+	WDG_NOTE_DETAILS_TITLE      = "note_details_title"
+	WDG_NOTE_DETAILS_CONTENT    = "note_details_content"
+	WDG_NOTE_DETAILS_HIDDEN     = "note_details_hidden"
+	WDG_NOTE_DETAILS_CREATED_AT = "note_details_created_at"
+	WDG_NOTE_DETAILS_UPDATED_AT = "note_details_updated_at"
 )

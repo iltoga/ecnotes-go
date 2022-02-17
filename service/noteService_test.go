@@ -82,7 +82,6 @@ func NewNoteRepositoryMock() *NoteRepositoryMockImpl {
 			"Oprah Winfrey quote",
 			"The best is yet to come, Jhon Lennon",
 			"The future belongs to those who believe in the beauty of their dreams",
-			"Eleanor Roosevelt",
 		},
 	}
 }

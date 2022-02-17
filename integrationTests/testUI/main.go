@@ -30,14 +30,14 @@ func NewNoteRepositoryMock() *NoteRepositoryMockImpl {
 	return &NoteRepositoryMockImpl{
 		mockedNotes: []service.Note{
 			{
-				ID:        1,
+				ID:        1761572867,
 				Title:     "Mandela quote",
 				Content:   "The greatest glory in living lies not in never falling, but in rising every time we fall. -Nelson Mandela",
 				CreatedAt: 1644832171924,
 				UpdatedAt: 1644832171924,
 			},
 			{
-				ID:        2,
+				ID:        3652028006,
 				Title:     "The way to get started is to quit talking and begin doing",
 				Content:   "Disney is the best company ever. - Walt Disney",
 				Hidden:    true,
@@ -45,14 +45,14 @@ func NewNoteRepositoryMock() *NoteRepositoryMockImpl {
 				UpdatedAt: 1644832181924,
 			},
 			{
-				ID:        3,
+				ID:        2903686729,
 				Title:     "Oprah Winfrey quote",
 				Content:   "If you look at what you have in life, you'll always have more. If you look at what you don't have in life, you'll never have enough",
 				CreatedAt: 1644832171924,
 				UpdatedAt: 1644832171924,
 			},
 			{
-				ID:        4,
+				ID:        566982022,
 				Title:     "The best is yet to come, Jhon Lennon",
 				Content:   "Life is what happens when you're busy making other plans",
 				Hidden:    true,
@@ -60,7 +60,7 @@ func NewNoteRepositoryMock() *NoteRepositoryMockImpl {
 				UpdatedAt: 1644832274924,
 			},
 			{
-				ID:        5,
+				ID:        1442556606,
 				Title:     "The future belongs to those who believe in the beauty of their dreams",
 				Content:   "Eleanor Roosevelt",
 				CreatedAt: 1644832171924,
@@ -73,7 +73,6 @@ func NewNoteRepositoryMock() *NoteRepositoryMockImpl {
 			"Oprah Winfrey quote",
 			"The best is yet to come, Jhon Lennon",
 			"The future belongs to those who believe in the beauty of their dreams",
-			"Eleanor Roosevelt",
 		},
 	}
 }
@@ -98,7 +97,6 @@ func (nsr *NoteRepositoryMockImpl) GetAllNotes() ([]service.Note, error) {
 // GetNote ....
 func (nsr *NoteRepositoryMockImpl) GetNote(id int) (*service.Note, error) {
 	for _, note := range nsr.mockedNotes {
-		note.ID = nsr.GetIDFromTitle(note.Title)
 		if note.ID == id {
 			return &note, nil
 		}
@@ -110,7 +108,6 @@ func (nsr *NoteRepositoryMockImpl) GetNote(id int) (*service.Note, error) {
 func (nsr *NoteRepositoryMockImpl) CreateNote(note *service.Note) error {
 	nsr.mockedNotes = append(nsr.mockedNotes, *note)
 	nsr.mockedTitles = append(nsr.mockedTitles, note.Title)
-	obs.Notify(observer.EVENT_UPDATE_NOTE_TITLES, nsr.mockedTitles)
 	return nil
 }
 
@@ -133,13 +130,6 @@ func (nsr *NoteRepositoryMockImpl) DeleteNote(id int) error {
 		n.ID = nsr.GetIDFromTitle(n.Title)
 		if n.ID == id {
 			nsr.mockedNotes = append(nsr.mockedNotes[:i], nsr.mockedNotes[i+1:]...)
-			for j, t := range nsr.mockedTitles {
-				if t == n.Title {
-					nsr.mockedTitles = append(nsr.mockedTitles[:j], nsr.mockedTitles[j+1:]...)
-					break
-				}
-			}
-			obs.Notify(observer.EVENT_UPDATE_NOTE_TITLES, nsr.mockedTitles)
 			return nil
 		}
 	}
@@ -192,10 +182,18 @@ func main() {
 	// add listeners
 	obs.AddListener(observer.EVENT_UPDATE_NOTE_TITLES, mainWindow.UpdateNoteListWidget())
 
-	mainWindow.CreateWindow("EcNotesTest", 800, 800, true)
+	// run the ui
+	mainWindow.CreateWindow("EcNotesTest", 800, 800, true, map[string]interface{}{
+		common.OPT_WINDOW_ASPECT: common.WindowAspect_Normal,
+	})
 	noteDetailWindow := ui.NewNoteDetailsWindow(testUI, new(service.Note))
-	obs.AddListener(observer.EVENT_NOTE_SELECTED, noteDetailWindow.UpdateNoteDetailsWidget())
-	noteDetailWindow.CreateWindow("testNoteDetails", 600, 400, true)
+	obs.AddListener(observer.EVENT_UPDATE_NOTE, noteDetailWindow.UpdateNoteDetailsWidget())
+	obs.AddListener(observer.EVENT_CREATE_NOTE, noteDetailWindow.UpdateNoteDetailsWidget())
+	// TODO: for now selcting a note opens is in 'update mode' and we probably don't need this event.
+	//       we should probably just add a button to toggle view/edit mode in the note details window
+	obs.AddListener(observer.EVENT_VIEW_NOTE, noteDetailWindow.UpdateNoteDetailsWidget())
+
+	noteDetailWindow.CreateWindow("testNoteDetails", 600, 400, false, make(map[string]interface{}))
 
 	// add some random notes at time interval
 	// go func() {

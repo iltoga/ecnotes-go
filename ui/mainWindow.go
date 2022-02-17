@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"log"
 
 	"fyne.io/fyne/v2"
@@ -11,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
+	"github.com/iltoga/ecnotes-go/service"
 	"github.com/iltoga/ecnotes-go/service/observer"
 )
 
@@ -21,7 +21,9 @@ type MainWindow interface {
 
 type MainWindowImpl struct {
 	UImpl
+	WindowDefaultOptions
 	titlesDataBinding binding.ExternalStringList
+	selectedNote      *service.Note
 }
 
 func NewMainWindow(ui *UImpl) MainWindow {
@@ -31,11 +33,16 @@ func NewMainWindow(ui *UImpl) MainWindow {
 }
 
 // CreateWindow ....
-func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bool) {
-	// define main windows
+func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bool, options map[string]interface{}) {
+	// init window
+	ui.ParseDefaultOptions(options)
 	w := ui.app.NewWindow(title)
 	ui.AddWindow("main", w)
-	w.Resize(fyne.NewSize(width, height))
+	if ui.windowAspect == common.WindowAspect_FullScreen {
+		w.SetFullScreen(true)
+	} else {
+		w.Resize(fyne.NewSize(width, height))
+	}
 
 	mainWinLoaderLabel := widget.NewLabel("Loading main window...")
 	mainWinLoader := func(msg string) *widget.Label {
@@ -69,16 +76,32 @@ func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bo
 
 	// create buttons
 	newNoteBtn := widget.NewButton("New", func() {
-		// when new note button is clicked
-		fmt.Println("new note button clicked")
+		ui.GetObserver().Notify(observer.EVENT_CREATE_NOTE, new(service.Note), common.WindowMode_Edit, common.WindowAction_New)
+		// set note details window to be visible
+		if err := ui.SetWindowVisibility(common.WIN_NOTE_DETAILS, true); err != nil {
+			ui.ShowNotification("Error", err.Error())
+		}
 	})
 	hideBtn := widget.NewButton("Hide", func() {
-		// when hide button is clicked
-		fmt.Println("hide button clicked")
+		if ui.selectedNote != nil {
+			ui.selectedNote.Hidden = true
+			unEncContent := ui.selectedNote.Content
+			if err := ui.noteService.UpdateNoteContent(ui.selectedNote); err != nil {
+				ui.ShowNotification("Error updating note content", err.Error())
+			}
+			// this is to allow user to see the note content unencrypted in the note details window
+			ui.selectedNote.Content = unEncContent
+		}
 	})
 	deleteNoteBtn := widget.NewButton("Delete", func() {
-		// when delete note button is clicked
-		fmt.Println("delete note button clicked")
+		if ui.selectedNote != nil {
+			// delete note from db
+			err := ui.noteService.DeleteNote(ui.selectedNote.ID)
+			if err != nil {
+				ui.ShowNotification("Error deleting note", err.Error())
+				return
+			}
+		}
 	})
 
 	btnBar := container.New(
@@ -94,7 +117,7 @@ func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bo
 		nil,
 		btnBar,
 	)
-	btnContainer := fyne.NewContainerWithLayout(
+	btnContainer := container.New(
 		btnBarLayout,
 		btnBar,
 	)
@@ -105,14 +128,15 @@ func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bo
 	// render main layout
 	mainLayout := container.NewVBox(
 		searchBox,
-		// container.NewHBox(
-		// 	widget.NewLabel("Search:"),
-		// 	searchBox,
-		// ),
 		btnContainer,
 		hSep,
 		mainWinLoader(winLoaderText),
 	)
+	w.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
+		if e.Name == fyne.KeyF11 {
+			ui.ToggleFullScreen(w)
+		}
+	})
 	w.SetContent(mainLayout)
 	w.SetMaster()
 	w.CenterOnScreen()
@@ -128,7 +152,7 @@ func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bo
 		<-ch
 		noteContainer := container.NewScroll(ui.runNoteList())
 		noteContainer.SetMinSize(w.Canvas().Size().Subtract(fyne.NewSize(100, 200)))
-		mainLayout.AddObject(noteContainer)
+		mainLayout.Add(noteContainer)
 	}()
 }
 
@@ -164,17 +188,16 @@ func (ui *MainWindowImpl) createNoteList(titles []string) fyne.CanvasObject {
 
 	ui.AddWidget("note_list", noteList)
 	noteList.OnSelected = func(lii widget.ListItemID) {
-		// when item is selected
-		fmt.Println("DEBUG: note list item selected:", lii)
+		var err error
 		// get note from db
-		title := titles[lii]
-		noteID := ui.noteService.GetNoteIDFromTitle(title)
-		note, err := ui.noteService.GetNoteWithContent(noteID)
+		noteID := ui.noteService.GetNoteIDFromTitle(titles[lii])
+		ui.selectedNote, err = ui.noteService.GetNoteWithContent(noteID)
 		if err != nil {
 			ui.ShowNotification("Error Loading note from db", err.Error())
 			return
 		}
-		ui.GetObserver().Notify(observer.EVENT_NOTE_SELECTED, note)
+		ui.GetObserver().Notify(observer.EVENT_UPDATE_NOTE, ui.selectedNote, common.WindowMode_Edit, common.WindowAction_Update)
+		ui.SetWindowVisibility(common.WIN_NOTE_DETAILS, true)
 	}
 
 	return noteList
@@ -192,7 +215,7 @@ func (ui *MainWindowImpl) UpdateNoteListWidget() observer.Listener {
 				log.Println("UpdateNoteList: invalid message value")
 				return
 			}
-			// TODO: take in accoung the search box
+			// TODO: take in account the search box
 			if ui.titlesDataBinding != nil {
 				if err := ui.titlesDataBinding.Set(uiTitles); err != nil {
 					log.Println("UpdateNoteList: error setting data:", err)

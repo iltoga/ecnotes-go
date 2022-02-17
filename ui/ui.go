@@ -22,6 +22,10 @@ type UI interface {
 	SetFocusOnWidget(w fyne.Window, wg fyne.CanvasObject)
 	GetNoteService() service.NoteService
 	GetObserver() observer.Observer
+	SetWidgetVisibility(name string, visible bool) error
+	SetWidgetEnabled(name string, enabled bool) error
+	SetWindowVisibility(name string, visible bool) error
+	ToggleFullScreen(w fyne.Window)
 }
 
 // UImpl Main ui configuration
@@ -53,6 +57,60 @@ func NewUI(
 		noteService: noteService,
 		obs:         obs,
 	}
+}
+
+// SetWidgetEnabled ....
+func (ui *UImpl) SetWidgetEnabled(name string, enabled bool) error {
+	ui.widMux.Lock()
+	defer ui.widMux.Unlock()
+	if w, ok := ui.widgets[name]; ok {
+		wd, ok := w.(fyne.Disableable)
+		if !ok {
+			return fmt.Errorf("widget %s is not disableable", name)
+		}
+		if enabled {
+			wd.Enable()
+		} else {
+			wd.Disable()
+		}
+		return nil
+	}
+	return fmt.Errorf("widget %s not found", name)
+}
+
+// ToggleFullScreen ....
+func (ui *UImpl) ToggleFullScreen(w fyne.Window) {
+	w.SetFullScreen(!w.FullScreen())
+}
+
+// SetWidgetVisibility ....
+func (ui *UImpl) SetWidgetVisibility(name string, visible bool) error {
+	ui.widMux.Lock()
+	defer ui.widMux.Unlock()
+	if w, ok := ui.widgets[name]; ok {
+		if visible {
+			w.Show()
+		} else {
+			w.Hide()
+		}
+		return nil
+	}
+	return fmt.Errorf("widget %s not found", name)
+}
+
+// SetWindowVisibility ....
+func (ui *UImpl) SetWindowVisibility(name string, visible bool) error {
+	ui.winMux.Lock()
+	defer ui.winMux.Unlock()
+	if w, ok := ui.windows[name]; ok {
+		if visible {
+			w.Show()
+		} else {
+			w.Hide()
+		}
+		return nil
+	}
+	return fmt.Errorf("window %s not found", name)
 }
 
 // GetNoteService ....
