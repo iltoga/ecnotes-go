@@ -157,20 +157,27 @@ func (ns *NoteServiceImpl) CreateNote(note *Note) error {
 	}
 	note.CreatedAt = common.GetCurrentTimestamp()
 	note.UpdatedAt = common.GetCurrentTimestamp()
-	note.Hidden = false
-	// encrypt content before saving to db
-	if err := ns.EncryptNote(note); err != nil {
-		return err
-	}
 	// add note title to titles array
 	ns.Titles = append(ns.Titles, note.Title)
 	// emit a note titles' update event that will update the note titles in the UI (main window)
 	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
+
+	// if note is encrypted, decrypt content before saving to db, to be able to present unencrypted content in the UI
+	// after saving the note to db
+	if note.Encrypted {
+		if err := ns.DecryptNote(note); err != nil {
+			return err
+		}
+	}
 	oldContent := note.Content
+	if err := ns.EncryptNote(note); err != nil {
+		return err
+	}
 	err := ns.NoteRepo.CreateNote(note)
 	// TODO: maybe refactor Crete/Update note to encrypt content but return the original (unencrypted) content
 	// this is to avoid showing the note content encrypted in the UI
 	note.Content = oldContent
+	note.Encrypted = false
 	// emit a note created event that will update the note details in the UI (note details window)
 	ns.Observer.Notify(observer.EVENT_CREATE_NOTE, note, common.WindowMode_Edit, common.WindowAction_Update)
 	return err
@@ -188,15 +195,23 @@ func (ns *NoteServiceImpl) UpdateNoteContent(note *Note) error {
 		return errors.New(common.ERR_NOTE_NOT_FOUND)
 	}
 	note.UpdatedAt = common.GetCurrentTimestamp()
-	// encrypt content before saving to db
+	// if note is encrypted, decrypt content before saving to db, to be able to present unencrypted content in the UI
+	// after saving the note to db
+	if note.Encrypted {
+		if err := ns.DecryptNote(note); err != nil {
+			return err
+		}
+	}
+	oldContent := note.Content
 	if err := ns.EncryptNote(note); err != nil {
 		return err
 	}
-	oldContent := note.Content
 	err := ns.NoteRepo.UpdateNote(note)
 	// TODO: maybe refactor Crete/Update note to encrypt content but return the original (unencrypted) content
 	// this is to avoid showing the note content encrypted in the UI
 	note.Content = oldContent
+	note.Encrypted = false
+
 	// emit a note created event that will update the note details in the UI (note details window)
 	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE, note, common.WindowMode_Edit, common.WindowAction_Update)
 	return err
@@ -239,10 +254,24 @@ func (ns *NoteServiceImpl) UpdateNoteTitle(oldTitle, newTitle string) (noteID in
 	if err = ns.NoteRepo.DeleteNote(oldIndex); err != nil {
 		return
 	}
+	// if note is encrypted, decrypt content before saving to db, to be able to present unencrypted content in the UI
+	// after saving the note to db
+	if note.Encrypted {
+		if err = ns.DecryptNote(note); err != nil {
+			return
+		}
+	}
+	oldContent := note.Content
+	if err = ns.EncryptNote(note); err != nil {
+		return
+	}
 	if err = ns.NoteRepo.CreateNote(note); err != nil {
 		return
 	}
 	noteID = newIndex
+	// always return unencrypted content after saving
+	note.Content = oldContent
+	note.Encrypted = false
 
 	// update titles array
 	for i, title := range ns.Titles {

@@ -32,26 +32,8 @@ func NewMainWindow(ui *UImpl) MainWindow {
 	}
 }
 
-// CreateWindow ....
-func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bool, options map[string]interface{}) {
-	// init window
-	ui.ParseDefaultOptions(options)
-	w := ui.app.NewWindow(title)
-	ui.AddWindow("main", w)
-	if ui.windowAspect == common.WindowAspect_FullScreen {
-		w.SetFullScreen(true)
-	} else {
-		w.Resize(fyne.NewSize(width, height))
-	}
-
-	mainWinLoaderLabel := widget.NewLabel("Loading main window...")
-	mainWinLoader := func(msg string) *widget.Label {
-		mainWinLoaderLabel.SetText(msg)
-		mainWinLoaderLabel.Alignment = fyne.TextAlignCenter
-		return mainWinLoaderLabel
-	}
-
-	ch := make(chan bool)
+// createWindowContainer creates a container with the window content
+func (ui *MainWindowImpl) createWindowContainer() *fyne.Container {
 	var winLoaderText string
 	// if we have encryption key, show password entry to decrypt and save to global map
 	if _, err := ui.confSrv.GetConfig(common.CONFIG_ENCRYPTION_KEY); err == nil {
@@ -76,7 +58,8 @@ func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bo
 
 	// create buttons
 	newNoteBtn := widget.NewButton("New", func() {
-		ui.GetObserver().Notify(observer.EVENT_CREATE_NOTE, new(service.Note), common.WindowMode_Edit, common.WindowAction_New)
+		ui.GetObserver().
+			Notify(observer.EVENT_CREATE_NOTE, new(service.Note), common.WindowMode_Edit, common.WindowAction_New)
 		// set note details window to be visible
 		if err := ui.SetWindowVisibility(common.WIN_NOTE_DETAILS, true); err != nil {
 			ui.ShowNotification("Error", err.Error())
@@ -125,24 +108,51 @@ func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bo
 	// horizontal separator
 	hSep := widget.NewSeparator()
 
+	// TODO: delete this if never shown
+	mainWinLoaderLabel := widget.NewLabel("Loading main window...")
+	mainWinLoaderLabel.Hidden = true
+	mainWinLoader := func(msg string) *widget.Label {
+		mainWinLoaderLabel.SetText(msg)
+		mainWinLoaderLabel.Alignment = fyne.TextAlignCenter
+		return mainWinLoaderLabel
+	}
+
 	// render main layout
-	mainLayout := container.NewVBox(
+	return container.NewVBox(
 		searchBox,
 		btnContainer,
 		hSep,
 		mainWinLoader(winLoaderText),
 	)
+}
+
+// CreateWindow ....
+func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bool, options map[string]interface{}) {
+	// init window
+	ui.ParseDefaultOptions(options)
+	w := ui.app.NewWindow(title)
+	ui.AddWindow("main", w)
+	if ui.windowAspect == common.WindowAspect_FullScreen {
+		w.SetFullScreen(true)
+	} else {
+		w.Resize(fyne.NewSize(width, height))
+	}
 	w.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
 		if e.Name == fyne.KeyF11 {
 			ui.ToggleFullScreen(w)
 		}
 	})
+
+	// create window container
+	mainLayout := ui.createWindowContainer()
 	w.SetContent(mainLayout)
 	w.SetMaster()
-	w.CenterOnScreen()
+	// w.CenterOnScreen()
 	w.Show()
+
 	// create the password modal window
-	modal := ui.runPasswordPopUp(w, common.EncryptionKeyAction_Decrypt, mainWinLoaderLabel, ch)
+	ch := make(chan bool)
+	modal := ui.runPasswordPopUp(w, common.EncryptionKeyAction_Decrypt, ch)
 	modal.Show()
 	if pwdWg, err := ui.GetWidget("password_popup_pwd"); err == nil {
 		ui.SetFocusOnWidget(w, pwdWg.(*widget.Entry))
@@ -196,7 +206,8 @@ func (ui *MainWindowImpl) createNoteList(titles []string) fyne.CanvasObject {
 			ui.ShowNotification("Error Loading note from db", err.Error())
 			return
 		}
-		ui.GetObserver().Notify(observer.EVENT_UPDATE_NOTE, ui.selectedNote, common.WindowMode_Edit, common.WindowAction_Update)
+		ui.GetObserver().
+			Notify(observer.EVENT_UPDATE_NOTE, ui.selectedNote, common.WindowMode_Edit, common.WindowAction_Update)
 		ui.SetWindowVisibility(common.WIN_NOTE_DETAILS, true)
 	}
 
@@ -229,7 +240,6 @@ func (ui *MainWindowImpl) UpdateNoteListWidget() observer.Listener {
 func (ui *MainWindowImpl) runPasswordPopUp(
 	w fyne.Window,
 	keyAction common.EncryptionKeyAction,
-	mainWinLoader *widget.Label,
 	ch chan bool,
 ) (modal *widget.PopUp) {
 	var (
@@ -241,8 +251,6 @@ func (ui *MainWindowImpl) runPasswordPopUp(
 			}
 			// reset password entry for security
 			pwdWg.SetText("")
-			// hide main window loader
-			mainWinLoader.Hidden = true
 
 			// set focus on serach box
 			if wg, err := ui.GetWidget("search_box"); err == nil {

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -71,7 +72,7 @@ func (ui *NoteDetailsWindowImpl) CreateWindow(
 		w.Resize(fyne.NewSize(width, height))
 	}
 
-	w.SetContent(ui.createFormWidget())
+	w.SetContent(ui.createFormWidget(w))
 	w.CenterOnScreen()
 	// TODO: find a more elegant way to recreate the window when it is closed
 	// this is to avoid the note details window to be destroyed when the user closes it
@@ -93,7 +94,7 @@ func (ui *NoteDetailsWindowImpl) CreateWindow(
 	}
 }
 
-func (ui *NoteDetailsWindowImpl) updateNoteData(n *service.Note) {
+func (ui *NoteDetailsWindowImpl) updateWidgetsData(n *service.Note) {
 	ui.note = n
 	// save the note title in case we update it (we need the old one to be able to save the note)
 	ui.oldTitle = n.Title
@@ -112,7 +113,13 @@ func (ui *NoteDetailsWindowImpl) updateNoteData(n *service.Note) {
 	if w, err := ui.GetWidget(common.WDG_NOTE_DETAILS_HIDDEN); err == nil {
 		w.(*widget.Check).SetChecked(n.Hidden)
 	} else {
-		log.Printf("Error getting hidden widget: %v", err)
+		log.Printf("Error getting hidden checkbox widget: %v", err)
+	}
+
+	if w, err := ui.GetWidget(common.WDG_NOTE_DETAILS_ENCRYPTED); err == nil {
+		w.(*widget.Check).SetChecked(n.Encrypted)
+	} else {
+		log.Printf("Error getting encrypted checkbox widget: %v", err)
 	}
 
 	createdAtStr := common.FormatTime(common.TimestampToTime(n.CreatedAt))
@@ -160,7 +167,7 @@ func (ui *NoteDetailsWindowImpl) UpdateNoteDetailsWidget() observer.Listener {
 				}
 			}
 			ui.setWidgetsStatus()
-			ui.updateNoteData(n)
+			ui.updateWidgetsData(n)
 		},
 	}
 }
@@ -168,7 +175,7 @@ func (ui *NoteDetailsWindowImpl) UpdateNoteDetailsWidget() observer.Listener {
 // Close close note details window
 func (ui *NoteDetailsWindowImpl) Close(clearData bool) {
 	if clearData {
-		ui.updateNoteData(new(service.Note))
+		ui.updateWidgetsData(new(service.Note))
 	}
 	w, err := ui.GetWindow(common.WIN_NOTE_DETAILS)
 	if err != nil {
@@ -177,7 +184,34 @@ func (ui *NoteDetailsWindowImpl) Close(clearData bool) {
 	w.Hide()
 }
 
-func (ui *NoteDetailsWindowImpl) createFormWidget() fyne.CanvasObject {
+// saveNote save a new note
+func (ui *NoteDetailsWindowImpl) saveNote() (note *service.Note, err error) {
+	if err = ui.noteService.CreateNote(ui.note); err != nil {
+		return
+	}
+	return ui.note, nil
+}
+
+// updateNote update an existing note
+func (ui *NoteDetailsWindowImpl) updatenote() (noteID int, err error) {
+	// try update the title, if changed
+	if ui.note.Title != ui.oldTitle && ui.note.Title != "" && ui.oldTitle != "" {
+		if noteID, err = ui.noteService.UpdateNoteTitle(ui.oldTitle, ui.note.Title); err != nil {
+			err = fmt.Errorf("error updating note title: %v", err)
+			return
+		}
+		// since we have deleted the old note from the database, we need to update the note id with the new one (the one
+		// returned by updating the title)
+		ui.note.ID = noteID
+	}
+	if err = ui.noteService.UpdateNoteContent(ui.note); err != nil {
+		return
+	}
+
+	return
+}
+
+func (ui *NoteDetailsWindowImpl) createFormWidget(w fyne.Window) fyne.CanvasObject {
 	// widgets
 	titleWidget := widget.NewEntry()
 	titleWidget.OnChanged = func(text string) {
@@ -194,6 +228,23 @@ func (ui *NoteDetailsWindowImpl) createFormWidget() fyne.CanvasObject {
 		ui.note.Hidden = checked
 	})
 
+	encryptedCheckbox := widget.NewCheck("Encrypted", func(encrypted bool) {
+		// if checked and the note is not encrypted, encrypt it, else decrypt it
+		if encrypted && !ui.note.Encrypted {
+			if err := ui.noteService.EncryptNote(ui.note); err != nil {
+				ui.ShowNotification("Error encrypting note", err.Error())
+				return
+			}
+		} else if !encrypted && ui.note.Encrypted {
+			if err := ui.noteService.DecryptNote(ui.note); err != nil {
+				ui.ShowNotification("Error decrypting note", err.Error())
+				return
+			}
+		}
+		ui.note.Encrypted = encrypted
+		ui.updateWidgetsData(ui.note)
+	})
+
 	createdAtWidget := widget.NewEntry()
 	createdAtWidget.Disable()
 
@@ -202,39 +253,23 @@ func (ui *NoteDetailsWindowImpl) createFormWidget() fyne.CanvasObject {
 
 	// form buttons: create all buttons and show only the ones that are needed
 	btnSaveNew := widget.NewButton("Save", func() {
-		unEncContent := ui.note.Content
-		if err := ui.noteService.CreateNote(ui.note); err != nil {
-			ui.ShowNotification("Error saving new note", err.Error())
+		if _, err := ui.saveNote(); err != nil {
+			ui.ShowNotification("Error saving note", err.Error())
 			return
 		}
-		// this is to allow the user to see the content unencrypted in the text editor
-		ui.note.Content = unEncContent
 		ui.ShowNotification("Note created", "")
 	})
 	ui.AddWidget(common.BTN_SAVE_NEW, btnSaveNew)
+
 	btnSaveUpdated := widget.NewButton("Save", func() {
-		var (
-			noteID int
-			err    error
-		)
-		// try update the title, if changed
-		if ui.note.Title != ui.oldTitle && ui.note.Title != "" && ui.oldTitle != "" {
-			if noteID, err = ui.noteService.UpdateNoteTitle(ui.oldTitle, ui.note.Title); err != nil {
-				ui.ShowNotification("Error updating note title", err.Error())
-				return
-			}
-		}
-		unEncContent := ui.note.Content
-		ui.note.ID = noteID
-		if err := ui.noteService.UpdateNoteContent(ui.note); err != nil {
-			ui.ShowNotification("Error updating note content", err.Error())
+		if _, err := ui.updatenote(); err != nil {
+			ui.ShowNotification("Error saving updated note", err.Error())
 			return
 		}
-		// this is to allow the user to see the content unencrypted in the text editor
-		ui.note.Content = unEncContent
 		ui.ShowNotification("Note updated", "")
 	})
 	ui.AddWidget(common.BTN_SAVE_UPDATED, btnSaveUpdated)
+
 	btnDelete := widget.NewButton("Delete", func() {
 		// double check that note ID is set and = note.Title (encoded)
 		computedID := ui.noteService.GetNoteIDFromTitle(ui.note.Title)
@@ -253,6 +288,7 @@ func (ui *NoteDetailsWindowImpl) createFormWidget() fyne.CanvasObject {
 		ui.Close(true)
 	})
 	ui.AddWidget(common.BTN_DELETE, btnDelete)
+
 	btnCancel := widget.NewButton("Cancel", func() {
 		ui.Close(true)
 	})
@@ -263,11 +299,42 @@ func (ui *NoteDetailsWindowImpl) createFormWidget() fyne.CanvasObject {
 	})
 	ui.AddWidget(common.BTN_OK, btnOk)
 
-	// TODO: move names to constants
+	btnCopyEncrypted := widget.NewButton("Copy Encrypted Note", func() {
+		// to not temper with the original note, we create a copy
+		tmpNote := ui.note
+		// if note content is not encrypted, encrypt it and copy it to clipboard
+		if !ui.note.Encrypted {
+			if err := ui.noteService.EncryptNote(tmpNote); err != nil {
+				ui.ShowNotification("Error encrypting note", err.Error())
+				return
+			}
+		}
+		clipboardContent := tmpNote.Title + ":\n" + tmpNote.Content
+		w.Clipboard().SetContent(clipboardContent)
+		ui.ShowNotification("Note content copied to system clipboard", w.Clipboard().Content())
+	})
+	ui.AddWidget(common.BTN_COPY_ENCRYPTED, btnOk)
+
+	btnPasteEncrypted := widget.NewButton("Paste Encrypted Note Content", func() {
+		// to not temper with the original note, we create a copy
+		note := ui.note
+		// to not temper with the original note, we create a copy
+		note.Content = w.Clipboard().Content()
+		// decrypt the note
+		if err := ui.noteService.DecryptNote(note); err != nil {
+			ui.ShowNotification("Error decrypting note", err.Error())
+			return
+		}
+		ui.updateWidgetsData(note)
+		ui.ShowNotification("Clipboard content decrypted and pasted into note", w.Clipboard().Content())
+	})
+	ui.AddWidget(common.BTN_OK, btnOk)
+
 	// adding widgets to widget map
 	ui.AddWidget(common.WDG_NOTE_DETAILS_TITLE, titleWidget)
 	ui.AddWidget(common.WDG_NOTE_DETAILS_CONTENT, contentWidget)
 	ui.AddWidget(common.WDG_NOTE_DETAILS_HIDDEN, hiddenCheckbox)
+	ui.AddWidget(common.WDG_NOTE_DETAILS_ENCRYPTED, encryptedCheckbox)
 	ui.AddWidget(common.WDG_NOTE_DETAILS_CREATED_AT, createdAtWidget)
 	ui.AddWidget(common.WDG_NOTE_DETAILS_UPDATED_AT, updatedAtWidget)
 
@@ -276,12 +343,22 @@ func (ui *NoteDetailsWindowImpl) createFormWidget() fyne.CanvasObject {
 	noteDetails.Append("Title", titleWidget)
 	noteDetails.Append("Content", contentWidget)
 	noteDetails.Append("Hidden", hiddenCheckbox)
+	// TODO: if using copy/paste encrypted content is sufficient, delete this checkbox and relative logic, as it
+	//			 complicates the UI
+	// noteDetails.Append("Encrypted", encryptedCheckbox)
 	noteDetails.Append("Created", createdAtWidget)
 	noteDetails.Append("Updated", updatedAtWidget)
 
+	btnBar := container.NewHBox(
+		btnCancel,
+		btnSaveNew,
+		btnSaveUpdated,
+		btnDelete,
+		btnOk,
+		btnCopyEncrypted,
+		btnPasteEncrypted,
+	)
 	// hide buttons that are not needed
-
-	btnBar := container.NewHBox(btnCancel, btnSaveNew, btnSaveUpdated, btnDelete, btnOk)
 	ui.setWidgetsStatus()
 	noteDetails.Append("", btnBar)
 	return noteDetails
@@ -301,6 +378,8 @@ func (ui *NoteDetailsWindowImpl) setWidgetsStatus() {
 		ui.SetWidgetVisibility(common.BTN_DELETE, false)
 		ui.SetWidgetVisibility(common.BTN_CANCEL, false)
 		ui.SetWidgetVisibility(common.BTN_OK, true)
+		ui.SetWidgetVisibility(common.BTN_COPY_ENCRYPTED, true)
+		ui.SetWidgetVisibility(common.BTN_PASTE_ENCRYPTED, false)
 	case common.WindowMode_Edit:
 		fallthrough
 	default:
@@ -317,6 +396,8 @@ func (ui *NoteDetailsWindowImpl) setWidgetsStatus() {
 			ui.SetWidgetVisibility(common.BTN_DELETE, true)
 			ui.SetWidgetVisibility(common.BTN_CANCEL, true)
 			ui.SetWidgetVisibility(common.BTN_OK, false)
+			ui.SetWidgetVisibility(common.BTN_COPY_ENCRYPTED, true)
+			ui.SetWidgetVisibility(common.BTN_PASTE_ENCRYPTED, true)
 		case common.WindowAction_Delete:
 			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_TITLE, true)
 			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_CONTENT, true)
@@ -329,13 +410,14 @@ func (ui *NoteDetailsWindowImpl) setWidgetsStatus() {
 			ui.SetWidgetVisibility(common.BTN_DELETE, true)
 			ui.SetWidgetVisibility(common.BTN_CANCEL, true)
 			ui.SetWidgetVisibility(common.BTN_OK, false)
+			ui.SetWidgetVisibility(common.BTN_COPY_ENCRYPTED, false)
+			ui.SetWidgetVisibility(common.BTN_PASTE_ENCRYPTED, false)
 		case common.WindowAction_New:
 			fallthrough
 		default:
 			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_TITLE, true)
 			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_CONTENT, true)
 			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_HIDDEN, true)
-
 			// hide updated and created fields if new note
 			ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_CREATED_AT, false)
 			ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_UPDATED_AT, false)
@@ -344,6 +426,8 @@ func (ui *NoteDetailsWindowImpl) setWidgetsStatus() {
 			ui.SetWidgetVisibility(common.BTN_DELETE, false)
 			ui.SetWidgetVisibility(common.BTN_CANCEL, true)
 			ui.SetWidgetVisibility(common.BTN_OK, false)
+			ui.SetWidgetVisibility(common.BTN_COPY_ENCRYPTED, true)
+			ui.SetWidgetVisibility(common.BTN_PASTE_ENCRYPTED, true)
 		}
 	}
 }

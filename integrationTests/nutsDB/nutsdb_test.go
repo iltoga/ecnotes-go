@@ -90,7 +90,7 @@ func (s *nutsDBSuiteTest) TestUpdateDeleteNote() {
 	newContent := "This is your first note.\n\nYou can edit it by clicking on the title.\n\nUpdated!"
 	newID := noteRepository.GetIDFromTitle(newTitle)
 	oldID := noteRepository.GetIDFromTitle(newNote.Title)
-	err = noteService.UpdateNoteTitle(newNote.Title, newTitle)
+	_, err = noteService.UpdateNoteTitle(newNote.Title, newTitle)
 	assert.NoError(t, err)
 	ok, err := noteRepository.NoteExists(oldID)
 	assert.Error(t, err, "key not found in the bucket")

@@ -3,10 +3,12 @@ package common
 import "time"
 
 // EncryptionKeyAction enum to describe the encryption key action
-type EncryptionKeyAction int64
-type WindowAspect int64
-type WindowMode int64
-type WindowAction int64
+type (
+	EncryptionKeyAction int64
+	WindowAspect        int64
+	WindowMode          int64
+	WindowAction        int64
+)
 
 const (
 	// WIDGET_NOTES_REFRESH_INTERVAL_MILLIS is the default refresh interval for the notes widget
@@ -38,15 +40,18 @@ const (
 	WIN_MAIN         = "main"
 	WIN_NOTE_DETAILS = "note_details"
 
-	BTN_CANCEL       = "btn_cancel"
-	BTN_SAVE_NEW     = "btn_save_new"
-	BTN_SAVE_UPDATED = "btn_save_updated"
-	BTN_DELETE       = "btn_delete"
-	BTN_OK           = "btn_ok"
+	BTN_CANCEL          = "btn_cancel"
+	BTN_SAVE_NEW        = "btn_save_new"
+	BTN_SAVE_UPDATED    = "btn_save_updated"
+	BTN_DELETE          = "btn_delete"
+	BTN_OK              = "btn_ok"
+	BTN_COPY_ENCRYPTED  = "btn_copy_encrypted"
+	BTN_PASTE_ENCRYPTED = "btn_paste_encrypted"
 
 	WDG_NOTE_DETAILS_TITLE      = "note_details_title"
 	WDG_NOTE_DETAILS_CONTENT    = "note_details_content"
 	WDG_NOTE_DETAILS_HIDDEN     = "note_details_hidden"
+	WDG_NOTE_DETAILS_ENCRYPTED  = "note_details_encrypted"
 	WDG_NOTE_DETAILS_CREATED_AT = "note_details_created_at"
 	WDG_NOTE_DETAILS_UPDATED_AT = "note_details_updated_at"
 )
