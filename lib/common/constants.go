@@ -47,6 +47,7 @@ const (
 	BTN_OK              = "btn_ok"
 	BTN_COPY_ENCRYPTED  = "btn_copy_encrypted"
 	BTN_PASTE_ENCRYPTED = "btn_paste_encrypted"
+	BTN_PASSWORD_MODAL  = "btn_password_modal"
 
 	WDG_NOTE_DETAILS_TITLE      = "note_details_title"
 	WDG_NOTE_DETAILS_CONTENT    = "note_details_content"
@@ -54,4 +55,7 @@ const (
 	WDG_NOTE_DETAILS_ENCRYPTED  = "note_details_encrypted"
 	WDG_NOTE_DETAILS_CREATED_AT = "note_details_created_at"
 	WDG_NOTE_DETAILS_UPDATED_AT = "note_details_updated_at"
+	WDG_NOTE_LIST               = "note_list"
+	WDG_PASSWORD_MODAL          = "password_modal"
+	WDG_SEARCH_BOX              = "search_box"
 )

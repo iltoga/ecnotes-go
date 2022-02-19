@@ -26,6 +26,7 @@ type NoteDetailsWindowImpl struct {
 	WindowDefaultOptions
 	note     *service.Note
 	oldTitle string // in case we update the note title we need to save the old one to be able to save the note
+	w        fyne.Window
 }
 
 // NewNoteDetailsWindow ....
@@ -66,6 +67,7 @@ func (ui *NoteDetailsWindowImpl) CreateWindow(
 	ui.ParseDefaultOptions(options)
 	w := ui.app.NewWindow(title)
 	ui.AddWindow(common.WIN_NOTE_DETAILS, w)
+	ui.w = w
 	if ui.windowAspect == common.WindowAspect_FullScreen {
 		w.SetFullScreen(true)
 	} else {
@@ -82,6 +84,10 @@ func (ui *NoteDetailsWindowImpl) CreateWindow(
 			ui.CreateWindow(title, width, height, visible, options)
 			ui.SetWindowVisibility(common.WIN_NOTE_DETAILS, false)
 		}()
+		// unselect all elements in the notes list, to allow the user to re-select the same note
+		if wdg, err := ui.GetWidget(common.WDG_NOTE_LIST); err == nil {
+			wdg.(*widget.List).UnselectAll()
+		}
 	})
 
 	if visible {
@@ -174,14 +180,11 @@ func (ui *NoteDetailsWindowImpl) UpdateNoteDetailsWidget() observer.Listener {
 
 // Close close note details window
 func (ui *NoteDetailsWindowImpl) Close(clearData bool) {
+	// just to make sure nothing is left in the window
 	if clearData {
 		ui.updateWidgetsData(new(service.Note))
 	}
-	w, err := ui.GetWindow(common.WIN_NOTE_DETAILS)
-	if err != nil {
-		ui.ShowNotification("Error getting window instance", err.Error())
-	}
-	w.Hide()
+	ui.w.Close()
 }
 
 // saveNote save a new note
@@ -258,6 +261,7 @@ func (ui *NoteDetailsWindowImpl) createFormWidget(w fyne.Window) fyne.CanvasObje
 			return
 		}
 		ui.ShowNotification("Note created", "")
+		ui.Close(true)
 	})
 	ui.AddWidget(common.BTN_SAVE_NEW, btnSaveNew)
 
@@ -267,6 +271,7 @@ func (ui *NoteDetailsWindowImpl) createFormWidget(w fyne.Window) fyne.CanvasObje
 			return
 		}
 		ui.ShowNotification("Note updated", "")
+		ui.Close(true)
 	})
 	ui.AddWidget(common.BTN_SAVE_UPDATED, btnSaveUpdated)
 
@@ -313,7 +318,7 @@ func (ui *NoteDetailsWindowImpl) createFormWidget(w fyne.Window) fyne.CanvasObje
 		w.Clipboard().SetContent(clipboardContent)
 		ui.ShowNotification("Note content copied to system clipboard", w.Clipboard().Content())
 	})
-	ui.AddWidget(common.BTN_COPY_ENCRYPTED, btnOk)
+	ui.AddWidget(common.BTN_COPY_ENCRYPTED, btnCopyEncrypted)
 
 	btnPasteEncrypted := widget.NewButton("Paste Encrypted Note Content", func() {
 		// to not temper with the original note, we create a copy
@@ -328,7 +333,7 @@ func (ui *NoteDetailsWindowImpl) createFormWidget(w fyne.Window) fyne.CanvasObje
 		ui.updateWidgetsData(note)
 		ui.ShowNotification("Clipboard content decrypted and pasted into note", w.Clipboard().Content())
 	})
-	ui.AddWidget(common.BTN_OK, btnOk)
+	ui.AddWidget(common.BTN_PASTE_ENCRYPTED, btnPasteEncrypted)
 
 	// adding widgets to widget map
 	ui.AddWidget(common.WDG_NOTE_DETAILS_TITLE, titleWidget)
@@ -349,18 +354,23 @@ func (ui *NoteDetailsWindowImpl) createFormWidget(w fyne.Window) fyne.CanvasObje
 	noteDetails.Append("Created", createdAtWidget)
 	noteDetails.Append("Updated", updatedAtWidget)
 
-	btnBar := container.NewHBox(
-		btnCancel,
-		btnSaveNew,
-		btnSaveUpdated,
-		btnDelete,
-		btnOk,
-		btnCopyEncrypted,
-		btnPasteEncrypted,
+	// buttons container
+	btnContainer := container.NewVBox(
+		container.NewHBox(
+			btnSaveNew,
+			btnSaveUpdated,
+			btnDelete,
+			btnCancel,
+			btnOk,
+		),
+		container.NewHBox(
+			btnCopyEncrypted,
+			btnPasteEncrypted,
+		),
 	)
 	// hide buttons that are not needed
 	ui.setWidgetsStatus()
-	noteDetails.Append("", btnBar)
+	noteDetails.Append("", btnContainer)
 	return noteDetails
 }
 

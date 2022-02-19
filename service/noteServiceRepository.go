@@ -33,8 +33,9 @@ type NoteServiceRepositoryImpl struct {
 func NewNoteServiceRepository(
 	dbPath string,
 	bucket string,
+	resetDB bool,
 ) (NoteServiceRepository, error) {
-	db, err := openDBConnection(dbPath)
+	db, err := openDBConnection(dbPath, resetDB)
 	if err != nil {
 		return nil, err
 	}
@@ -45,17 +46,19 @@ func NewNoteServiceRepository(
 	}, nil
 }
 
-func openDBConnection(dbPath string) (*nutsdb.DB, error) {
+func openDBConnection(dbPath string, resetDB bool) (*nutsdb.DB, error) {
 	opt := nutsdb.DefaultOptions
 
-	files, _ := ioutil.ReadDir(dbPath)
-	for _, f := range files {
-		name := f.Name()
-		if name != "" {
-			fmt.Println(dbPath + "/" + name)
-			err := os.RemoveAll(dbPath + "/" + name)
-			if err != nil {
-				return nil, err
+	if resetDB {
+		files, _ := ioutil.ReadDir(dbPath)
+		for _, f := range files {
+			name := f.Name()
+			if name != "" {
+				fmt.Println(dbPath + "/" + name)
+				err := os.RemoveAll(dbPath + "/" + name)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 	}

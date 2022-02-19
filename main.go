@@ -34,7 +34,8 @@ func init() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	noteRepository, err = service.NewNoteServiceRepository(kvdbPath, defaultBucket)
+	// TODO: pass env var to reset db (last parameter)
+	noteRepository, err = service.NewNoteServiceRepository(kvdbPath, defaultBucket, false)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -44,7 +45,7 @@ func init() {
 
 func main() {
 	// TODO: delete this if not needed (fyne framework already takes care of keeping the app running till we close the main window)
-	// SetupCloseHandler()
+	SetupCloseHandler()
 
 	fmt.Println("Starting...")
 	// create a new ui
@@ -53,14 +54,18 @@ func main() {
 
 	// add listener to ui service to trigger note list widget update whenever the note title array changes
 	obs.AddListener(observer.EVENT_UPDATE_NOTE_TITLES, mainWindow.UpdateNoteListWidget())
-	obs.AddListener(observer.EVENT_CREATE_NOTE, mainWindow.UpdateNoteListWidget())
-	obs.AddListener(observer.EVENT_UPDATE_NOTE, mainWindow.UpdateNoteListWidget())
-
-	// start the ui
 
 	// TODO: load some defaults from configuration?
 	emptyOptions := make(map[string]interface{})
 	mainWindow.CreateWindow("EcNotes", 800, 800, true, emptyOptions)
+	noteDetailWindow := ui.NewNoteDetailsWindow(appUI, new(service.Note))
+	obs.AddListener(observer.EVENT_UPDATE_NOTE, noteDetailWindow.UpdateNoteDetailsWidget())
+	obs.AddListener(observer.EVENT_CREATE_NOTE, noteDetailWindow.UpdateNoteDetailsWidget())
+	// TODO: for now selcting a note opens is in 'update mode' and we probably don't need this event.
+	//       we should probably just add a button to toggle view/edit mode in the note details window
+	obs.AddListener(observer.EVENT_VIEW_NOTE, noteDetailWindow.UpdateNoteDetailsWidget())
+
+	noteDetailWindow.CreateWindow("testNoteDetails", 600, 400, false, make(map[string]interface{}))
 	appUI.Run()
 }
 

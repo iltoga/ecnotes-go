@@ -6,6 +6,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/iltoga/ecnotes-go/lib/common"
@@ -24,6 +25,7 @@ type MainWindowImpl struct {
 	WindowDefaultOptions
 	titlesDataBinding binding.ExternalStringList
 	selectedNote      *service.Note
+	w                 fyne.Window
 }
 
 func NewMainWindow(ui *UImpl) MainWindow {
@@ -45,7 +47,7 @@ func (ui *MainWindowImpl) createWindowContainer() *fyne.Container {
 	// create main layout
 	searchBox := widget.NewEntry()
 	searchBox.SetPlaceHolder("Search note titles")
-	ui.AddWidget("search_box", searchBox)
+	ui.AddWidget(common.WDG_SEARCH_BOX, searchBox)
 	searchBox.OnChanged = func(text string) {
 		// when search box is changed
 		// use fuzzy search to find titles that match the search text
@@ -126,12 +128,83 @@ func (ui *MainWindowImpl) createWindowContainer() *fyne.Container {
 	)
 }
 
+// createPasswordModal creates a modal dialog to enter password
+func (ui *MainWindowImpl) createPasswordModal(w fyne.Window, c *fyne.Container) *widget.PopUp {
+	ch := make(chan bool)
+	modal := ui.runPasswordPopUp(w, common.EncryptionKeyAction_Decrypt, ch)
+	modal.Show()
+	if pwdWg, err := ui.GetWidget(common.WDG_PASSWORD_MODAL); err == nil {
+		ui.SetFocusOnWidget(w, pwdWg.(*widget.Entry))
+	}
+
+	go func() {
+		<-ch
+		noteContainer := container.NewScroll(ui.runNoteList())
+		noteContainer.SetMinSize(w.Canvas().Size().Subtract(fyne.NewSize(100, 200)))
+		c.Add(noteContainer)
+	}()
+
+	return modal
+}
+
+// createMainWindowMenu creates the main window menu
+func (ui *MainWindowImpl) createMainWindowMenu() *fyne.MainMenu {
+	menuItemCopyEncKey := &fyne.MenuItem{
+		Label: "Copy encryption key to clipboard",
+		Action: func() {
+			// get the (password encrypted) encryption key
+			encKey, err := ui.confSrv.GetConfig(common.CONFIG_ENCRYPTION_KEY)
+			if err != nil {
+				ui.ShowNotification("", "It looks like encryption key has not been generated yet")
+				return
+			}
+			ui.w.Clipboard().SetContent(encKey)
+		},
+	}
+	menuItemImportEncKey := &fyne.MenuItem{
+		Label: "Import encryption key",
+		Action: func() {
+			onConfirm := func(s string) {
+				if s == "" {
+					ui.ShowNotification("", "Encrypted key is empty! Canceling...")
+					return
+				}
+				if err := ui.confSrv.SetConfig(common.CONFIG_ENCRYPTION_KEY, s); err != nil {
+					ui.ShowNotification("Error saving encryption key to configuration", err.Error())
+					return
+				}
+				if err := ui.confSrv.SaveConfig(); err != nil {
+					ui.ShowNotification("Error updating configuration file", err.Error())
+					return
+				}
+				ui.ShowNotification("", "Encryption key has been imported successfully")
+			}
+			dg := dialog.NewEntryDialog(
+				"Import Encryption Key. Attention! This will overwrite the existing key in configuration file",
+				"",
+				onConfirm,
+				ui.w,
+			)
+			dg.Resize(fyne.NewSize(600, 200))
+			dg.Show()
+		},
+	}
+
+	menuItems := []*fyne.MenuItem{menuItemCopyEncKey, menuItemImportEncKey}
+	menu := &fyne.Menu{
+		Label: "File",
+		Items: menuItems,
+	}
+	return fyne.NewMainMenu(menu)
+}
+
 // CreateWindow ....
 func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bool, options map[string]interface{}) {
 	// init window
 	ui.ParseDefaultOptions(options)
 	w := ui.app.NewWindow(title)
 	ui.AddWindow("main", w)
+	ui.w = w
 	if ui.windowAspect == common.WindowAspect_FullScreen {
 		w.SetFullScreen(true)
 	} else {
@@ -143,27 +216,16 @@ func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bo
 		}
 	})
 
+	// create main window menu
+	w.SetMainMenu(ui.createMainWindowMenu())
+
 	// create window container
 	mainLayout := ui.createWindowContainer()
-	w.SetContent(mainLayout)
 	w.SetMaster()
-	// w.CenterOnScreen()
 	w.Show()
-
-	// create the password modal window
-	ch := make(chan bool)
-	modal := ui.runPasswordPopUp(w, common.EncryptionKeyAction_Decrypt, ch)
-	modal.Show()
-	if pwdWg, err := ui.GetWidget("password_popup_pwd"); err == nil {
-		ui.SetFocusOnWidget(w, pwdWg.(*widget.Entry))
-	}
-
-	go func() {
-		<-ch
-		noteContainer := container.NewScroll(ui.runNoteList())
-		noteContainer.SetMinSize(w.Canvas().Size().Subtract(fyne.NewSize(100, 200)))
-		mainLayout.Add(noteContainer)
-	}()
+	_ = ui.createPasswordModal(w, mainLayout)
+	w.SetContent(mainLayout)
+	// w.CenterOnScreen()
 }
 
 func (ui *MainWindowImpl) runNoteList() fyne.CanvasObject {
@@ -173,13 +235,14 @@ func (ui *MainWindowImpl) runNoteList() fyne.CanvasObject {
 		// load notes from db (and populate titles array)
 		_, err := ui.noteService.GetNotes()
 		if err != nil {
-			ui.ShowNotification("Error", err.Error())
-			return &widget.Card{
-				Title: "Error",
-				Content: widget.NewLabel(
-					err.Error(),
-				),
-			}
+			ui.ShowNotification("", "Note list is empty")
+			// ui.ShowNotification("Error", err.Error())
+			// return &widget.Card{
+			// 	Title: "Error",
+			// 	Content: widget.NewLabel(
+			// 		err.Error(),
+			// 	),
+			// }
 		}
 		titles = ui.noteService.GetTitles()
 	}
@@ -196,7 +259,8 @@ func (ui *MainWindowImpl) createNoteList(titles []string) fyne.CanvasObject {
 			o.(*widget.Label).Bind(i.(binding.String))
 		})
 
-	ui.AddWidget("note_list", noteList)
+	ui.AddWidget(common.WDG_NOTE_LIST, noteList)
+
 	noteList.OnSelected = func(lii widget.ListItemID) {
 		var err error
 		// get note from db
@@ -206,8 +270,11 @@ func (ui *MainWindowImpl) createNoteList(titles []string) fyne.CanvasObject {
 			ui.ShowNotification("Error Loading note from db", err.Error())
 			return
 		}
-		ui.GetObserver().
-			Notify(observer.EVENT_UPDATE_NOTE, ui.selectedNote, common.WindowMode_Edit, common.WindowAction_Update)
+		ui.GetObserver().Notify(
+			observer.EVENT_UPDATE_NOTE,
+			ui.selectedNote,
+			common.WindowMode_Edit,
+			common.WindowAction_Update)
 		ui.SetWindowVisibility(common.WIN_NOTE_DETAILS, true)
 	}
 
@@ -253,7 +320,7 @@ func (ui *MainWindowImpl) runPasswordPopUp(
 			pwdWg.SetText("")
 
 			// set focus on serach box
-			if wg, err := ui.GetWidget("search_box"); err == nil {
+			if wg, err := ui.GetWidget(common.WDG_SEARCH_BOX); err == nil {
 				ui.SetFocusOnWidget(w, wg.(*widget.Entry))
 			}
 			ch <- true
@@ -272,8 +339,8 @@ func (ui *MainWindowImpl) runPasswordPopUp(
 	}
 
 	// add widgets to widgets map
-	ui.AddWidget("password_popup_pwd", pwdWg)
-	ui.AddWidget("password_popup_btn", btnWg)
+	ui.AddWidget(common.WDG_PASSWORD_MODAL, pwdWg)
+	ui.AddWidget(common.BTN_PASSWORD_MODAL, btnWg)
 
 	if keyAction == common.EncryptionKeyAction_Decrypt {
 		btnWg.SetText("Enter password to Decrypt Key")
