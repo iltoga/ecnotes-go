@@ -7,6 +7,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/service"
@@ -116,6 +117,12 @@ func (ui *NoteDetailsWindowImpl) updateWidgetsData(n *service.Note) {
 		log.Printf("Error getting content widget: %v", err)
 	}
 
+	if w, err := ui.GetWidget(common.WDG_NOTE_DETAILS_CONTENT_RICH_TEXT); err == nil {
+		w.(*widget.RichText).ParseMarkdown(n.Content)
+	} else {
+		log.Printf("Error getting content widget: %v", err)
+	}
+
 	if w, err := ui.GetWidget(common.WDG_NOTE_DETAILS_HIDDEN); err == nil {
 		w.(*widget.Check).SetChecked(n.Hidden)
 	} else {
@@ -130,14 +137,14 @@ func (ui *NoteDetailsWindowImpl) updateWidgetsData(n *service.Note) {
 
 	createdAtStr := common.FormatTime(common.TimestampToTime(n.CreatedAt))
 	if w, err := ui.GetWidget(common.WDG_NOTE_DETAILS_CREATED_AT); err == nil {
-		w.(*widget.Entry).SetText(createdAtStr)
+		w.(*widget.Label).SetText(fmt.Sprintf("Created:  %s", createdAtStr))
 	} else {
 		log.Printf("Error getting createdAt widget: %v", err)
 	}
 
 	updatedAtStr := common.FormatTime(common.TimestampToTime(n.UpdatedAt))
 	if w, err := ui.GetWidget(common.WDG_NOTE_DETAILS_UPDATED_AT); err == nil {
-		w.(*widget.Entry).SetText(updatedAtStr)
+		w.(*widget.Label).SetText(fmt.Sprintf("Updated:  %s", updatedAtStr))
 	} else {
 		log.Printf("Error getting updatedAt widget: %v", err)
 	}
@@ -217,14 +224,22 @@ func (ui *NoteDetailsWindowImpl) updatenote() (noteID int, err error) {
 func (ui *NoteDetailsWindowImpl) createFormWidget(w fyne.Window) fyne.CanvasObject {
 	// widgets
 	titleWidget := widget.NewEntry()
+	titleWidget.SetPlaceHolder("Title")
 	titleWidget.OnChanged = func(text string) {
 		ui.note.Title = text
 	}
 
+	// create a markdown widget to display the content
+	contentWidgetRichText := widget.NewRichText()
+	contentWidgetRichText.Wrapping = fyne.TextWrapWord
+	contentWidgetRichText.Scroll = container.ScrollVerticalOnly
+
 	contentWidget := widget.NewMultiLineEntry()
+	contentWidget.SetPlaceHolder("Note Content")
 	contentWidget.Wrapping = fyne.TextWrapWord
 	contentWidget.OnChanged = func(text string) {
 		ui.note.Content = text
+		contentWidgetRichText.ParseMarkdown(text)
 	}
 
 	hiddenCheckbox := widget.NewCheck("Hidden", func(checked bool) {
@@ -248,11 +263,8 @@ func (ui *NoteDetailsWindowImpl) createFormWidget(w fyne.Window) fyne.CanvasObje
 		ui.updateWidgetsData(ui.note)
 	})
 
-	createdAtWidget := widget.NewEntry()
-	createdAtWidget.Disable()
-
-	updatedAtWidget := widget.NewEntry()
-	updatedAtWidget.Disable()
+	createdAtWidget := widget.NewLabel("")
+	updatedAtWidget := widget.NewLabel("")
 
 	// form buttons: create all buttons and show only the ones that are needed
 	btnSaveNew := widget.NewButton("Save", func() {
@@ -335,28 +347,35 @@ func (ui *NoteDetailsWindowImpl) createFormWidget(w fyne.Window) fyne.CanvasObje
 	})
 	ui.AddWidget(common.BTN_PASTE_ENCRYPTED, btnPasteEncrypted)
 
+	// create a button to toggle between the two content widgets
+	btnToggleContent := widget.NewButton("Toggle Content", func() {
+		if contentWidget.Visible() {
+			contentWidget.Hide()
+			contentWidgetRichText.Show()
+		} else {
+			contentWidgetRichText.Hide()
+			contentWidget.Show()
+		}
+	})
+	ui.AddWidget(common.BTN_TOGGLE_CONTENT, btnToggleContent)
+
 	// adding widgets to widget map
 	ui.AddWidget(common.WDG_NOTE_DETAILS_TITLE, titleWidget)
 	ui.AddWidget(common.WDG_NOTE_DETAILS_CONTENT, contentWidget)
+	ui.AddWidget(common.WDG_NOTE_DETAILS_CONTENT_RICH_TEXT, contentWidgetRichText)
 	ui.AddWidget(common.WDG_NOTE_DETAILS_HIDDEN, hiddenCheckbox)
 	ui.AddWidget(common.WDG_NOTE_DETAILS_ENCRYPTED, encryptedCheckbox)
 	ui.AddWidget(common.WDG_NOTE_DETAILS_CREATED_AT, createdAtWidget)
 	ui.AddWidget(common.WDG_NOTE_DETAILS_UPDATED_AT, updatedAtWidget)
 
-	// define content
-	noteDetails := widget.NewForm()
-	noteDetails.Append("Title", titleWidget)
-	noteDetails.Append("Content", contentWidget)
-	noteDetails.Append("Hidden", hiddenCheckbox)
-	// TODO: if using copy/paste encrypted content is sufficient, delete this checkbox and relative logic, as it
-	//			 complicates the UI
-	// noteDetails.Append("Encrypted", encryptedCheckbox)
-	noteDetails.Append("Created", createdAtWidget)
-	noteDetails.Append("Updated", updatedAtWidget)
-
-	// buttons container
-	btnContainer := container.NewVBox(
+	// adding widgets to bottom part of layout
+	bottomContainer := container.NewVBox(
+		hiddenCheckbox,
+		createdAtWidget,
+		updatedAtWidget,
+		widget.NewSeparator(),
 		container.NewHBox(
+			btnToggleContent,
 			btnSaveNew,
 			btnSaveUpdated,
 			btnDelete,
@@ -368,10 +387,25 @@ func (ui *NoteDetailsWindowImpl) createFormWidget(w fyne.Window) fyne.CanvasObje
 			btnPasteEncrypted,
 		),
 	)
+
 	// hide buttons that are not needed
 	ui.setWidgetsStatus()
-	noteDetails.Append("", btnContainer)
-	return noteDetails
+
+	// define the window container as a horizontal container
+	noteDetailsContainer := fyne.NewContainerWithLayout(
+		layout.NewBorderLayout(
+			titleWidget,
+			bottomContainer,
+			nil,
+			nil,
+		),
+		titleWidget,
+		bottomContainer,
+		contentWidget,
+		contentWidgetRichText,
+	)
+
+	return noteDetailsContainer
 }
 
 func (ui *NoteDetailsWindowImpl) setWidgetsStatus() {
@@ -381,6 +415,8 @@ func (ui *NoteDetailsWindowImpl) setWidgetsStatus() {
 		ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_CONTENT, false)
 		ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_HIDDEN, false)
 
+		ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_CONTENT, false)
+		ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_CONTENT_RICH_TEXT, true)
 		ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_CREATED_AT, true)
 		ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_UPDATED_AT, true)
 		ui.SetWidgetVisibility(common.BTN_SAVE_NEW, false)
@@ -390,6 +426,7 @@ func (ui *NoteDetailsWindowImpl) setWidgetsStatus() {
 		ui.SetWidgetVisibility(common.BTN_OK, true)
 		ui.SetWidgetVisibility(common.BTN_COPY_ENCRYPTED, true)
 		ui.SetWidgetVisibility(common.BTN_PASTE_ENCRYPTED, false)
+		ui.SetWidgetVisibility(common.BTN_TOGGLE_CONTENT, false)
 	case common.WindowMode_Edit:
 		fallthrough
 	default:
@@ -399,6 +436,8 @@ func (ui *NoteDetailsWindowImpl) setWidgetsStatus() {
 			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_CONTENT, true)
 			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_HIDDEN, true)
 
+			ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_CONTENT, false)
+			ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_CONTENT_RICH_TEXT, true)
 			ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_CREATED_AT, true)
 			ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_UPDATED_AT, true)
 			ui.SetWidgetVisibility(common.BTN_SAVE_NEW, false)
@@ -408,11 +447,14 @@ func (ui *NoteDetailsWindowImpl) setWidgetsStatus() {
 			ui.SetWidgetVisibility(common.BTN_OK, false)
 			ui.SetWidgetVisibility(common.BTN_COPY_ENCRYPTED, true)
 			ui.SetWidgetVisibility(common.BTN_PASTE_ENCRYPTED, true)
+			ui.SetWidgetVisibility(common.BTN_TOGGLE_CONTENT, true)
 		case common.WindowAction_Delete:
-			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_TITLE, true)
-			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_CONTENT, true)
-			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_HIDDEN, true)
+			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_TITLE, false)
+			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_CONTENT, false)
+			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_HIDDEN, false)
 
+			ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_CONTENT, false)
+			ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_CONTENT_RICH_TEXT, true)
 			ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_CREATED_AT, true)
 			ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_UPDATED_AT, true)
 			ui.SetWidgetVisibility(common.BTN_SAVE_NEW, false)
@@ -422,12 +464,16 @@ func (ui *NoteDetailsWindowImpl) setWidgetsStatus() {
 			ui.SetWidgetVisibility(common.BTN_OK, false)
 			ui.SetWidgetVisibility(common.BTN_COPY_ENCRYPTED, false)
 			ui.SetWidgetVisibility(common.BTN_PASTE_ENCRYPTED, false)
+			ui.SetWidgetVisibility(common.BTN_TOGGLE_CONTENT, false)
 		case common.WindowAction_New:
 			fallthrough
 		default:
 			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_TITLE, true)
 			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_CONTENT, true)
 			ui.SetWidgetEnabled(common.WDG_NOTE_DETAILS_HIDDEN, true)
+
+			ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_CONTENT, true)
+			ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_CONTENT_RICH_TEXT, false)
 			// hide updated and created fields if new note
 			ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_CREATED_AT, false)
 			ui.SetWidgetVisibility(common.WDG_NOTE_DETAILS_UPDATED_AT, false)
@@ -438,6 +484,7 @@ func (ui *NoteDetailsWindowImpl) setWidgetsStatus() {
 			ui.SetWidgetVisibility(common.BTN_OK, false)
 			ui.SetWidgetVisibility(common.BTN_COPY_ENCRYPTED, true)
 			ui.SetWidgetVisibility(common.BTN_PASTE_ENCRYPTED, true)
+			ui.SetWidgetVisibility(common.BTN_TOGGLE_CONTENT, true)
 		}
 	}
 }

@@ -153,7 +153,7 @@ func initDB() {
 	}
 	// mock configuration so that we can use the db for testing without a UI
 	mockConfig()
-	noteRepository, err = service.NewNoteServiceRepository(kvdbPath, defaultBucket)
+	noteRepository, err = service.NewNoteServiceRepository(kvdbPath, defaultBucket, true)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

@@ -2,19 +2,18 @@ package service
 
 import (
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
 
+	"github.com/iltoga/ecnotes-go/lib/common"
 	toml "github.com/pelletier/go-toml"
-)
-
-const (
-	defaultResourcePath = "./resources"
 )
 
 // ConfigService ....
 type ConfigService interface {
+	GetResourcePath() string
 	GetGlobal(key string) (string, error)
 	SetGlobal(key string, value string)
 	GetConfig(key string) (string, error)
@@ -36,14 +35,60 @@ type ConfigServiceImpl struct {
 
 // NewConfigService ....
 func NewConfigService() ConfigService {
-	return &ConfigServiceImpl{
-		ResourcePath: defaultResourcePath,
+	srv := &ConfigServiceImpl{
+		ResourcePath: common.DEFAULT_RESOURCE_PATH,
 		Config:       make(map[string]string),
 		Globals:      make(map[string]string),
 		Loaded:       false,
 		ConfigMux:    &sync.RWMutex{},
 		GlobalsMux:   &sync.RWMutex{},
 	}
+	srv.init()
+	return srv
+}
+
+// setDefaultConfig set some default values in the config file if not exists
+func (c *ConfigServiceImpl) setDefaultConfig() {
+	if _, ok := c.Config[common.CONFIG_KVDB_PATH]; !ok {
+		c.Config[common.CONFIG_KVDB_PATH] = filepath.Join(c.ResourcePath, common.DEFAULT_DB_PATH)
+	}
+}
+
+func (c *ConfigServiceImpl) init() {
+	// check if the default resource path exists
+	if _, err := os.Stat(c.ResourcePath); os.IsNotExist(err) {
+		// if not, try to get the user's home directory
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			log.Fatalf("Could not get user's home directory")
+		}
+		// create the default resource path if not exists
+		resourcePath := filepath.Join(homeDir, ".config", "ecnotes")
+		if err := os.MkdirAll(resourcePath, 0755); err != nil {
+			log.Fatalf("Failed to create resource path: %s", resourcePath)
+		}
+		c.ResourcePath = resourcePath
+	}
+
+	// create the default config file if not exists
+	configFilePath := c.getConfigFilePath()
+	if _, err := os.Stat(configFilePath); os.IsNotExist(err) {
+		f, err := os.Create(configFilePath)
+		if err != nil {
+			log.Fatalf("Failed to create config file: %s", configFilePath)
+		}
+		defer f.Close()
+		// set some default values
+		c.setDefaultConfig()
+		if err := toml.NewEncoder(f).Encode(c.Config); err != nil {
+			log.Fatalf("Failed to write default config file: %s", configFilePath)
+		}
+	}
+}
+
+// GetResourcePath  ....
+func (c *ConfigServiceImpl) GetResourcePath() string {
+	return c.ResourcePath
 }
 
 // GetConfig ....
@@ -121,10 +166,7 @@ func (c *ConfigServiceImpl) SaveConfig() error {
 	defer f.Close()
 	c.ConfigMux.RLock()
 	defer c.ConfigMux.RUnlock()
-	if err := toml.NewEncoder(f).Encode(c.Config); err != nil {
-		return err
-	}
-	return nil
+	return toml.NewEncoder(f).Encode(c.Config)
 }
 
 func (c *ConfigServiceImpl) getConfigFilePath() string {

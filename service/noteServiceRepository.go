@@ -102,10 +102,7 @@ func (nsr *NoteServiceRepositoryImpl) GetNote(id int) (*Note, error) {
 				return err
 			}
 			// unmarshal note
-			if err := common.UnmarshalJSON(dbEntry.Value, &note); err != nil {
-				return err
-			}
-			return nil
+			return common.UnmarshalJSON(dbEntry.Value, &note)
 		}); err != nil {
 		return nil, err
 	}

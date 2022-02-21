@@ -20,28 +20,35 @@ var testNote = &service.Note{
 	UpdatedAt: 1643614680013,
 }
 
+// ObserverMockImpl ....
 type ObserverMockImpl struct{}
 
+// AddListener ....
 func (obmock *ObserverMockImpl) AddListener(event observer.Event, listener observer.Listener) {
 }
 
+// Remove ....
 func (obmock *ObserverMockImpl) Remove(event observer.Event) {
 }
 
+// Notify ....
 func (obmock *ObserverMockImpl) Notify(event observer.Event, data interface{}, args ...interface{}) {
 }
 
+// ConfigServiceMockImpl ....
 type ConfigServiceMockImpl struct {
 	Loaded  bool
 	Globals map[string]string
 	Config  map[string]string
 }
 
+// NoteRepositoryMockImpl ....
 type NoteRepositoryMockImpl struct {
 	mockedNotes  []service.Note
 	mockedTitles []string
 }
 
+// NewNoteRepositoryMock ....
 func NewNoteRepositoryMock() *NoteRepositoryMockImpl {
 	return &NoteRepositoryMockImpl{
 		mockedNotes: []service.Note{
@@ -129,6 +136,7 @@ func (nsr *NoteRepositoryMockImpl) DeleteNote(id int) error {
 	return errors.New(common.ERR_NOTE_NOT_FOUND)
 }
 
+// NoteExists ....
 func (nsr *NoteRepositoryMockImpl) NoteExists(id int) (bool, error) {
 	for _, note := range nsr.mockedNotes {
 		if note.ID == id {
@@ -138,6 +146,7 @@ func (nsr *NoteRepositoryMockImpl) NoteExists(id int) (bool, error) {
 	return false, nil
 }
 
+// GetIDFromTitle ....
 func (nsr *NoteRepositoryMockImpl) GetIDFromTitle(title string) int {
 	return int(cryptoUtil.IndexFromString(title))
 }
@@ -148,35 +157,48 @@ type noteConfigServiceMockImpl struct {
 	Loaded  bool
 }
 
+// GetResourcePath ....
+func (nsc *noteConfigServiceMockImpl) GetResourcePath() string {
+	return "./resource"
+}
+
+// GetGlobal ....
 func (nsc *noteConfigServiceMockImpl) GetGlobal(key string) (string, error) {
 	return nsc.Globals[key], nil
 }
 
+// SetGlobal ....
 func (nsc *noteConfigServiceMockImpl) SetGlobal(key string, value string) {
 	panic("not implemented") // TODO: Implement
 }
 
+// GetConfig ....
 func (nsc *noteConfigServiceMockImpl) GetConfig(key string) (string, error) {
 	panic("not implemented") // TODO: Implement
 }
 
+// SetConfig ....
 func (nsc *noteConfigServiceMockImpl) SetConfig(key string, value string) error {
 	panic("not implemented") // TODO: Implement
 }
 
+// LoadConfig ....
 func (nsc *noteConfigServiceMockImpl) LoadConfig() error {
 	nsc.Loaded = true
 	return nil
 }
 
+// ParseConfigTree ....
 func (nsc *noteConfigServiceMockImpl) ParseConfigTree(configTree *toml.Tree) {
 	panic("not implemented") // TODO: Implement
 }
 
+// SaveConfig ....
 func (nsc *noteConfigServiceMockImpl) SaveConfig() error {
 	panic("not implemented") // TODO: Implement
 }
 
+// TestNoteServiceImpl_EncryptNote ....
 func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 	type fields struct {
 		Titles        []string
@@ -231,6 +253,7 @@ func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 	}
 }
 
+// TestNoteServiceImpl_SearchNotes ....
 func TestNoteServiceImpl_SearchNotes(t *testing.T) {
 	noteRepositoryMock := NewNoteRepositoryMock()
 	type fields struct {

@@ -128,10 +128,15 @@ func (ui *MainWindowImpl) createWindowContainer() *fyne.Container {
 	)
 }
 
-// createPasswordModal creates a modal dialog to enter password
-func (ui *MainWindowImpl) createPasswordModal(w fyne.Window, c *fyne.Container) *widget.PopUp {
+// createPasswordPopUp creates a modal dialog to enter password
+func (ui *MainWindowImpl) createPasswordPopUp(w fyne.Window, c *fyne.Container) *widget.PopUp {
 	ch := make(chan bool)
-	modal := ui.runPasswordPopUp(w, common.EncryptionKeyAction_Decrypt, ch)
+	// check if we have encryption key in the config
+	keyAction := common.EncryptionKeyAction_Decrypt
+	if _, err := ui.confSrv.GetConfig(common.CONFIG_ENCRYPTION_KEY); err != nil {
+		keyAction = common.EncryptionKeyAction_Generate
+	}
+	modal := ui.runPasswordPopUp(w, keyAction, ch)
 	modal.Show()
 	if pwdWg, err := ui.GetWidget(common.WDG_PASSWORD_MODAL); err == nil {
 		ui.SetFocusOnWidget(w, pwdWg.(*widget.Entry))
@@ -223,7 +228,7 @@ func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bo
 	mainLayout := ui.createWindowContainer()
 	w.SetMaster()
 	w.Show()
-	_ = ui.createPasswordModal(w, mainLayout)
+	_ = ui.createPasswordPopUp(w, mainLayout)
 	w.SetContent(mainLayout)
 	// w.CenterOnScreen()
 }

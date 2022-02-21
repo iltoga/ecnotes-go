@@ -45,7 +45,7 @@ func init() {
 
 func main() {
 	// TODO: delete this if not needed (fyne framework already takes care of keeping the app running till we close the main window)
-	SetupCloseHandler()
+	// SetupCloseHandler()
 
 	fmt.Println("Starting...")
 	// create a new ui
@@ -57,7 +57,7 @@ func main() {
 
 	// TODO: load some defaults from configuration?
 	emptyOptions := make(map[string]interface{})
-	mainWindow.CreateWindow("EcNotes", 800, 800, true, emptyOptions)
+	mainWindow.CreateWindow("EcNotes", 600, 800, true, emptyOptions)
 	noteDetailWindow := ui.NewNoteDetailsWindow(appUI, new(service.Note))
 	obs.AddListener(observer.EVENT_UPDATE_NOTE, noteDetailWindow.UpdateNoteDetailsWidget())
 	obs.AddListener(observer.EVENT_CREATE_NOTE, noteDetailWindow.UpdateNoteDetailsWidget())
@@ -65,7 +65,7 @@ func main() {
 	//       we should probably just add a button to toggle view/edit mode in the note details window
 	obs.AddListener(observer.EVENT_VIEW_NOTE, noteDetailWindow.UpdateNoteDetailsWidget())
 
-	noteDetailWindow.CreateWindow("testNoteDetails", 600, 400, false, make(map[string]interface{}))
+	noteDetailWindow.CreateWindow("testNoteDetails", 600, 800, false, make(map[string]interface{}))
 	appUI.Run()
 }
 
