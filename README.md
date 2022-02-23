@@ -36,17 +36,22 @@ https://blog.coupler.io/how-to-use-google-sheets-as-database/#Exportimport_data_
 
 \* for now we only support authentication via 'service account' credentials, which doesn't require to authenticate your google app via web (oauth2) and requires to share your google sheet with the service account email that will be created during the procedure described in the article.
 
-#### Configuring EcNotes with google account sync
-If you have followed the article and created the google account service, you've been asked to download the json file with the credentials to your computer. 
-Now run EcNotes at least once, so that creates the configuration directories and copy or move this file to your home directory (on linux 'echo #HOME' from a terminal to see where it is). Eg: 
-`mv whatever_credentials.json #HOME/.config/ecnotes/providers/google/cred_serviceaccount.json`
-Please note that the file name (`cred_serviceaccount.json`) is important.
-
-
 #### Format the google sheet
 Once you have set up your Google account and created and shared your google sheet, you have to format it by adding these column headers in the first row:
 
 | ID | Title | Content | Hidden | Encrypted | CreatedAt|UpdatedAt |
 |----|-------|---------|--------|-----------|----------|----------|
 
+#### Configuring EcNotes with google account sync
+If you have followed the article and created the google account service, you've been asked to download the json file with the credentials to your computer. 
+Now run EcNotes at least once, so that creates the configuration directories and copy or move this file to your home directory (on linux 'echo #HOME' from a terminal to see where it is). Eg: 
+`mv whatever_credentials.json #HOME/.config/ecnotes/providers/google/cred_serviceaccount.json`
+<i>Please note that the file name (`cred_serviceaccount.json`) is important.<\i>
 
+Last but not least is to get your google sheet ID and add it to EcNotes configuration:
+- copy the id from the sheet url (it looks something like this `1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms`)
+- Add this line into your `config.toml` file (that should be in `$HOME/.config/ecnotes/resources/`):
+	```toml
+	google_sheet_id = "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+	```
+	don't forget to change the id with yours

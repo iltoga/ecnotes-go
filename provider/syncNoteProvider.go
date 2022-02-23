@@ -6,8 +6,10 @@ import "github.com/iltoga/ecnotes-go/model"
 // SyncNoteProvider is the interface that must be implemented by a sync-note provider implementation
 // Note: the relative service must be able to get/put/delete/find notes from the provider
 type SyncNoteProvider interface {
+	// GetNotes returns a list of notes from the provider
+	GetNotes() ([]model.Note, error)
 	// GetNoteIDs returns the list of note IDs from the provider
-	GetNoteIDs() ([]int, error)
+	GetNoteIDs(forceRemote bool) ([]int, error)
 	// GetNote returns the note with the given id
 	GetNote(id int) (*model.Note, error)
 	// PutNote puts the given note into the provider

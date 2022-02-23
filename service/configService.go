@@ -70,8 +70,8 @@ func (c *ConfigServiceImpl) setDefaultConfig() {
 		)
 		c.Config[common.CONFIG_GOOGLE_PROVIDER_PATH] = googleProviderPath
 		// create the directory if not exists
-		if _, err := os.Stat(filepath.Dir(googleProviderPath)); os.IsNotExist(err) {
-			if err := os.MkdirAll(filepath.Dir(googleProviderPath), 0755); err != nil {
+		if _, err := os.Stat(googleProviderPath); os.IsNotExist(err) {
+			if err := os.MkdirAll(googleProviderPath, 0755); err != nil {
 				log.Fatalf("Failed to create directory: %s", filepath.Dir(googleProviderPath))
 			}
 		}

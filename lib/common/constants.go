@@ -17,8 +17,9 @@ const (
 	ENCRYPTION_KEY_LENGTH          = 256
 	CONFIG_ENCRYPTION_KEY          = "encryption_key"
 	CONFIG_KVDB_PATH               = "kvdb_path"
-	CONFIG_GOOGLE_PROVIDER_PATH    = "google_credentials_path"
+	CONFIG_GOOGLE_PROVIDER_PATH    = "google_provider_path"
 	CONFIG_GOOGLE_CREDENTIALS_FILE = "google_credentials_file"
+	CONGIG_GOOGLE_SHEET_ID         = "google_sheet_id"
 
 	EncryptionKeyAction_Generate EncryptionKeyAction = iota
 	EncryptionKeyAction_Decrypt

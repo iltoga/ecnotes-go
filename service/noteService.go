@@ -79,8 +79,6 @@ func (ns *NoteServiceImpl) GetNotes() ([]model.Note, error) {
 		ns.Titles = append(ns.Titles, note.Title)
 		// swap the note with the decrypted one
 		notes[idx] = note
-		// STEF totest only!
-		// fmt.Printf("%+v\n", note)
 	}
 	// emit a note titles' update event
 	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
