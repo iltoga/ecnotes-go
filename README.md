@@ -1,5 +1,5 @@
 # EcNotes (encrypted notes)
-`[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)`
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 Multi-platform gui app to store and manage encrypted notes. It can be used to store sensitive information such as passwords and crypto keys
 
