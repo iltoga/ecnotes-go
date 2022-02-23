@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
+	"github.com/iltoga/ecnotes-go/model"
 	"github.com/iltoga/ecnotes-go/service"
 	"github.com/iltoga/ecnotes-go/service/observer"
 	"github.com/iltoga/ecnotes-go/ui"
@@ -21,14 +22,14 @@ var (
 
 // NoteRepositoryMockImpl ....
 type NoteRepositoryMockImpl struct {
-	mockedNotes  []service.Note
+	mockedNotes  []model.Note
 	mockedTitles []string
 }
 
 // NewNoteRepositoryMock ....
 func NewNoteRepositoryMock() *NoteRepositoryMockImpl {
 	return &NoteRepositoryMockImpl{
-		mockedNotes: []service.Note{
+		mockedNotes: []model.Note{
 			{
 				ID:        1761572867,
 				Title:     "Mandela quote",
@@ -78,7 +79,7 @@ func NewNoteRepositoryMock() *NoteRepositoryMockImpl {
 }
 
 // GetAllNotes ....
-func (nsr *NoteRepositoryMockImpl) GetAllNotes() ([]service.Note, error) {
+func (nsr *NoteRepositoryMockImpl) GetAllNotes() ([]model.Note, error) {
 	mocks := NewNoteRepositoryMock()
 	nsr.mockedNotes = mocks.mockedNotes
 	// encrypt all notes in nsr.mockedNotes
@@ -95,7 +96,7 @@ func (nsr *NoteRepositoryMockImpl) GetAllNotes() ([]service.Note, error) {
 }
 
 // GetNote ....
-func (nsr *NoteRepositoryMockImpl) GetNote(id int) (*service.Note, error) {
+func (nsr *NoteRepositoryMockImpl) GetNote(id int) (*model.Note, error) {
 	for _, note := range nsr.mockedNotes {
 		if note.ID == id {
 			return &note, nil
@@ -105,14 +106,14 @@ func (nsr *NoteRepositoryMockImpl) GetNote(id int) (*service.Note, error) {
 }
 
 // CreateNote ....
-func (nsr *NoteRepositoryMockImpl) CreateNote(note *service.Note) error {
+func (nsr *NoteRepositoryMockImpl) CreateNote(note *model.Note) error {
 	nsr.mockedNotes = append(nsr.mockedNotes, *note)
 	nsr.mockedTitles = append(nsr.mockedTitles, note.Title)
 	return nil
 }
 
 // UpdateNote ....
-func (nsr *NoteRepositoryMockImpl) UpdateNote(note *service.Note) error {
+func (nsr *NoteRepositoryMockImpl) UpdateNote(note *model.Note) error {
 	for i, n := range nsr.mockedNotes {
 		note.ID = nsr.GetIDFromTitle(note.Title)
 		if n.ID == note.ID {
@@ -186,7 +187,7 @@ func main() {
 	mainWindow.CreateWindow("EcNotesTest", 800, 800, true, map[string]interface{}{
 		common.OPT_WINDOW_ASPECT: common.WindowAspect_Normal,
 	})
-	noteDetailWindow := ui.NewNoteDetailsWindow(testUI, new(service.Note))
+	noteDetailWindow := ui.NewNoteDetailsWindow(testUI, new(model.Note))
 	obs.AddListener(observer.EVENT_UPDATE_NOTE, noteDetailWindow.UpdateNoteDetailsWidget())
 	obs.AddListener(observer.EVENT_CREATE_NOTE, noteDetailWindow.UpdateNoteDetailsWidget())
 	// TODO: for now selcting a note opens is in 'update mode' and we probably don't need this event.
@@ -200,7 +201,7 @@ func main() {
 	// 	time.Sleep(time.Second * 10)
 	// 	for {
 	// 		time.Sleep(time.Millisecond * 2000)
-	// 		note := service.Note{
+	// 		note := model.Note{
 	// 			Title:   "Random note " + strconv.Itoa(rand.Intn(10000)),
 	// 			Content: "Random content",
 	// 		}

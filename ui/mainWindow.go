@@ -11,7 +11,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
-	"github.com/iltoga/ecnotes-go/service"
+	"github.com/iltoga/ecnotes-go/model"
 	"github.com/iltoga/ecnotes-go/service/observer"
 )
 
@@ -24,7 +24,7 @@ type MainWindowImpl struct {
 	UImpl
 	WindowDefaultOptions
 	titlesDataBinding binding.ExternalStringList
-	selectedNote      *service.Note
+	selectedNote      *model.Note
 	w                 fyne.Window
 }
 
@@ -61,7 +61,7 @@ func (ui *MainWindowImpl) createWindowContainer() *fyne.Container {
 	// create buttons
 	newNoteBtn := widget.NewButton("New", func() {
 		ui.GetObserver().
-			Notify(observer.EVENT_CREATE_NOTE, new(service.Note), common.WindowMode_Edit, common.WindowAction_New)
+			Notify(observer.EVENT_CREATE_NOTE, new(model.Note), common.WindowMode_Edit, common.WindowAction_New)
 		// set note details window to be visible
 		if err := ui.SetWindowVisibility(common.WIN_NOTE_DETAILS, true); err != nil {
 			ui.ShowNotification("Error", err.Error())

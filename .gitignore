@@ -4,6 +4,8 @@
 *.dll
 *.so
 *.dylib
+ecnotes-go
+ecnotes-go.tar.xz
 
 # Test binary, built with `go test -c`
 *.test
@@ -11,9 +13,11 @@
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
+# Sensitive files which shouldn't be in version control
+resources/config.toml
+
 # Dependency directories (remove the comment below to include it)
+resources/db/
 vendor/
 .vscode/
 
-ecnotes-go
-ecnotes-go.tar.xz

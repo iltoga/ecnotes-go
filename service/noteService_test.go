@@ -7,12 +7,13 @@ import (
 
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
+	"github.com/iltoga/ecnotes-go/model"
 	"github.com/iltoga/ecnotes-go/service"
 	"github.com/iltoga/ecnotes-go/service/observer"
 	toml "github.com/pelletier/go-toml"
 )
 
-var testNote = &service.Note{
+var testNote = &model.Note{
 	ID:        1,
 	Title:     "title1",
 	Content:   "test content",
@@ -44,14 +45,14 @@ type ConfigServiceMockImpl struct {
 
 // NoteRepositoryMockImpl ....
 type NoteRepositoryMockImpl struct {
-	mockedNotes  []service.Note
+	mockedNotes  []model.Note
 	mockedTitles []string
 }
 
 // NewNoteRepositoryMock ....
 func NewNoteRepositoryMock() *NoteRepositoryMockImpl {
 	return &NoteRepositoryMockImpl{
-		mockedNotes: []service.Note{
+		mockedNotes: []model.Note{
 			{
 				ID:      1,
 				Title:   "Mandela quote",
@@ -94,12 +95,12 @@ func NewNoteRepositoryMock() *NoteRepositoryMockImpl {
 }
 
 // GetAllNotes ....
-func (nsr *NoteRepositoryMockImpl) GetAllNotes() ([]service.Note, error) {
+func (nsr *NoteRepositoryMockImpl) GetAllNotes() ([]model.Note, error) {
 	return nsr.mockedNotes, nil
 }
 
 // GetNote ....
-func (nsr *NoteRepositoryMockImpl) GetNote(id int) (*service.Note, error) {
+func (nsr *NoteRepositoryMockImpl) GetNote(id int) (*model.Note, error) {
 	for _, note := range nsr.mockedNotes {
 		if note.ID == id {
 			return &note, nil
@@ -109,13 +110,13 @@ func (nsr *NoteRepositoryMockImpl) GetNote(id int) (*service.Note, error) {
 }
 
 // CreateNote ....
-func (nsr *NoteRepositoryMockImpl) CreateNote(note *service.Note) error {
+func (nsr *NoteRepositoryMockImpl) CreateNote(note *model.Note) error {
 	nsr.mockedNotes = append(nsr.mockedNotes, *note)
 	return nil
 }
 
 // UpdateNote ....
-func (nsr *NoteRepositoryMockImpl) UpdateNote(note *service.Note) error {
+func (nsr *NoteRepositoryMockImpl) UpdateNote(note *model.Note) error {
 	for i, n := range nsr.mockedNotes {
 		if n.ID == note.ID {
 			nsr.mockedNotes[i] = *note
@@ -207,7 +208,7 @@ func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 		Observer      observer.Observer
 	}
 	type args struct {
-		note *service.Note
+		note *model.Note
 	}
 	tests := []struct {
 		name    string

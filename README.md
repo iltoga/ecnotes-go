@@ -14,13 +14,15 @@ Through the years I've always been struggling to find a simple tool to store my 
 - would be nice if it allows to manage external (public) keys: this would allow to exchange encrypted notes/messages with other people (you know.. real e2e encryption, without having to trust third parties ;) )
 
 ### EXTERNAL PROVIDERS
-You can use these providers to sync your ecnotes on the cloud:
-
+You can use these providers to extend functionalities of EcNotes:
 - Google
 - TODO: add others...
 
 ### Google
-With this provider you can sync (two-way) your ecnotes to a google sheet that you have created on your google account.
+With this provider you can sync (two-way) your ecnotes to a google sheet on your google account.
+This enables:
+- Database synchronization between multiple instances of EcNotes (eg. one on a linux desktop and another on an Android phone) via google sheet
+- Cloud backup service via google sheet 
 
 #### Setting up your Google account
 To set up this provider you must first configure an app and service account* using Google Developer Console:

@@ -6,23 +6,24 @@ import (
 
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
+	"github.com/iltoga/ecnotes-go/model"
 	"github.com/iltoga/ecnotes-go/service/observer"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
 // NoteService ....
 type NoteService interface {
-	GetNoteWithContent(id int) (*Note, error)
-	GetNotes() ([]Note, error)
+	GetNoteWithContent(id int) (*model.Note, error)
+	GetNotes() ([]model.Note, error)
 	GetTitles() []string
 	SearchNotes(query string, fuzzySearch bool) ([]string, error)
-	CreateNote(note *Note) error
-	UpdateNoteContent(note *Note) error
+	CreateNote(note *model.Note) error
+	UpdateNoteContent(note *model.Note) error
 
 	UpdateNoteTitle(oldTitle, newTitle string) (noteID int, err error)
 	DeleteNote(id int) error
-	EncryptNote(note *Note) error
-	DecryptNote(note *Note) error
+	EncryptNote(note *model.Note) error
+	DecryptNote(note *model.Note) error
 	GetNoteIDFromTitle(title string) int
 }
 
@@ -33,17 +34,6 @@ type NoteServiceImpl struct {
 	Observer      observer.Observer
 	// Titles an array with all note Titles in db
 	Titles []string
-}
-
-// Note ....
-type Note struct {
-	ID        int    `json:"id"`
-	Title     string `json:"title"`
-	Content   string `json:"content"`
-	Hidden    bool   `json:"hidden"`
-	Encrypted bool   `json:"encrypted"`
-	CreatedAt int64  `json:"created_at"`
-	UpdatedAt int64  `json:"updated_at"`
 }
 
 // NewNoteService ....
@@ -66,7 +56,7 @@ func (ns *NoteServiceImpl) GetNoteIDFromTitle(title string) int {
 }
 
 // GetNote retreives a note from the db by id and decrypts it
-func (ns *NoteServiceImpl) GetNoteWithContent(id int) (*Note, error) {
+func (ns *NoteServiceImpl) GetNoteWithContent(id int) (*model.Note, error) {
 	note, err := ns.NoteRepo.GetNote(id)
 	if err != nil {
 		return nil, err
@@ -80,7 +70,7 @@ func (ns *NoteServiceImpl) GetNoteWithContent(id int) (*Note, error) {
 
 // GetNotes returns all note titles from the db and populate Titles array and TitlesIDMap with the results
 // note: the note content is returned encrypted
-func (ns *NoteServiceImpl) GetNotes() ([]Note, error) {
+func (ns *NoteServiceImpl) GetNotes() ([]model.Note, error) {
 	notes, err := ns.NoteRepo.GetAllNotes()
 	if err != nil {
 		return nil, err
@@ -89,6 +79,8 @@ func (ns *NoteServiceImpl) GetNotes() ([]Note, error) {
 		ns.Titles = append(ns.Titles, note.Title)
 		// swap the note with the decrypted one
 		notes[idx] = note
+		// STEF totest only!
+		// fmt.Printf("%+v\n", note)
 	}
 	// emit a note titles' update event
 	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
@@ -143,7 +135,7 @@ func (ns *NoteServiceImpl) searchExact(query string, titles []string) []string {
 }
 
 // CreateNote ....
-func (ns *NoteServiceImpl) CreateNote(note *Note) error {
+func (ns *NoteServiceImpl) CreateNote(note *model.Note) error {
 	if note.Title == "" || note.Content == "" {
 		return errors.New(common.ERR_NOTE_EMPTY)
 	}
@@ -184,7 +176,7 @@ func (ns *NoteServiceImpl) CreateNote(note *Note) error {
 }
 
 // UpdateNoteContent update the content of an existing note
-func (ns *NoteServiceImpl) UpdateNoteContent(note *Note) error {
+func (ns *NoteServiceImpl) UpdateNoteContent(note *model.Note) error {
 	if note.Title == "" || note.Content == "" || note.ID == 0 {
 		return errors.New(common.ERR_NOTE_EMPTY)
 	}
@@ -240,7 +232,7 @@ func (ns *NoteServiceImpl) UpdateNoteTitle(oldTitle, newTitle string) (noteID in
 		err = errors.New(common.ERR_NOTE_NOT_FOUND)
 		return
 	}
-	var note *Note
+	var note *model.Note
 	note, err = ns.NoteRepo.GetNote(oldIndex)
 	if err != nil {
 		return
@@ -311,7 +303,7 @@ func (ns *NoteServiceImpl) DeleteNote(id int) error {
 }
 
 // EncryptNote ....
-func (ns *NoteServiceImpl) EncryptNote(note *Note) error {
+func (ns *NoteServiceImpl) EncryptNote(note *model.Note) error {
 	// make sure the note is not empty
 	if note == nil || note.Title == "" || note.Content == "" {
 		return errors.New(common.ERR_NOTE_EMPTY)
@@ -331,7 +323,7 @@ func (ns *NoteServiceImpl) EncryptNote(note *Note) error {
 }
 
 // DecryptNote ....
-func (ns *NoteServiceImpl) DecryptNote(note *Note) error {
+func (ns *NoteServiceImpl) DecryptNote(note *model.Note) error {
 	// make sure the note is not empty
 	if note == nil || note.Title == "" || note.Content == "" {
 		return errors.New(common.ERR_NOTE_EMPTY)

@@ -47,10 +47,36 @@ func NewConfigService() ConfigService {
 	return srv
 }
 
-// setDefaultConfig set some default values in the config file if not exists
+// setDefaultConfig set some default values in the config map if they are not set yet
 func (c *ConfigServiceImpl) setDefaultConfig() {
+	// set default config for db path
 	if _, ok := c.Config[common.CONFIG_KVDB_PATH]; !ok {
 		c.Config[common.CONFIG_KVDB_PATH] = filepath.Join(c.ResourcePath, common.DEFAULT_DB_PATH)
+	}
+	// set default config for google credentials file path (defaults to user home directory .config/ecnotes)
+	// note: the directory will be automatically created, but you must manually copy the file inside it
+	// in order to use google sheets service (see google-sheets-service.go)
+	if _, ok := c.Config[common.CONFIG_GOOGLE_PROVIDER_PATH]; !ok {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			log.Fatalf("Could not get user's home directory")
+		}
+		googleProviderPath := filepath.Join(
+			homeDir,
+			".config",
+			"ecnotes",
+			"providers",
+			"google",
+		)
+		c.Config[common.CONFIG_GOOGLE_PROVIDER_PATH] = googleProviderPath
+		// create the directory if not exists
+		if _, err := os.Stat(filepath.Dir(googleProviderPath)); os.IsNotExist(err) {
+			if err := os.MkdirAll(filepath.Dir(googleProviderPath), 0755); err != nil {
+				log.Fatalf("Failed to create directory: %s", filepath.Dir(googleProviderPath))
+			}
+		}
+		// set default credentials file
+		c.Config[common.CONFIG_GOOGLE_CREDENTIALS_FILE] = filepath.Join(googleProviderPath, "cred_serviceaccount.json")
 	}
 }
 
@@ -70,19 +96,26 @@ func (c *ConfigServiceImpl) init() {
 		c.ResourcePath = resourcePath
 	}
 
-	// create the default config file if not exists
+	// create the default config file if not exists, otherwise update it if needed (if the config file is outdated)
 	configFilePath := c.getConfigFilePath()
-	if _, err := os.Stat(configFilePath); os.IsNotExist(err) {
+	_, err := os.Stat(configFilePath)
+	if os.IsNotExist(err) {
+		// create the default config file
 		f, err := os.Create(configFilePath)
 		if err != nil {
 			log.Fatalf("Failed to create config file: %s", configFilePath)
 		}
-		defer f.Close()
-		// set some default values
-		c.setDefaultConfig()
-		if err := toml.NewEncoder(f).Encode(c.Config); err != nil {
-			log.Fatalf("Failed to write default config file: %s", configFilePath)
+		f.Close()
+	} else {
+		// update the config file in case we updated the default configuration with new values
+		if err := c.LoadConfig(); err != nil {
+			log.Fatalf("Failed to load config file: %s", configFilePath)
 		}
+	}
+	// set some default values (if not set yet)
+	c.setDefaultConfig()
+	if err := c.SaveConfig(); err != nil {
+		log.Fatalf("Failed to save config file: %s", configFilePath)
 	}
 }
 

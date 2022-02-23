@@ -8,6 +8,7 @@ import (
 
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
+	"github.com/iltoga/ecnotes-go/model"
 	"github.com/iltoga/ecnotes-go/service"
 	"github.com/iltoga/ecnotes-go/service/observer"
 	"github.com/stretchr/testify/assert"
@@ -51,7 +52,7 @@ func (s *nutsDBSuiteTest) TestCreateAndReadNote() {
 	var (
 		t = s.T()
 		// create a new note to have something in the db
-		newNote = &service.Note{
+		newNote = &model.Note{
 			Title:   "Welcome to EcNotes",
 			Content: "This is your first note.\n\nYou can edit it by clicking on the title.",
 		}
@@ -76,7 +77,7 @@ func (s *nutsDBSuiteTest) TestUpdateDeleteNote() {
 	var (
 		t = s.T()
 		// create a new note to have something in the db
-		newNote = &service.Note{
+		newNote = &model.Note{
 			Title:   "Welcome to EcNotes",
 			Content: "This is your first note.\n\nYou can edit it by clicking on the title.",
 		}

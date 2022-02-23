@@ -10,7 +10,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/iltoga/ecnotes-go/lib/common"
-	"github.com/iltoga/ecnotes-go/service"
+	"github.com/iltoga/ecnotes-go/model"
 	"github.com/iltoga/ecnotes-go/service/observer"
 )
 
@@ -25,13 +25,13 @@ type NoteDetailsWindow interface {
 type NoteDetailsWindowImpl struct {
 	UImpl
 	WindowDefaultOptions
-	note     *service.Note
+	note     *model.Note
 	oldTitle string // in case we update the note title we need to save the old one to be able to save the note
 	w        fyne.Window
 }
 
 // NewNoteDetailsWindow ....
-func NewNoteDetailsWindow(ui *UImpl, note *service.Note) NoteDetailsWindow {
+func NewNoteDetailsWindow(ui *UImpl, note *model.Note) NoteDetailsWindow {
 	return &NoteDetailsWindowImpl{
 		UImpl: *ui,
 		note:  note,
@@ -101,7 +101,7 @@ func (ui *NoteDetailsWindowImpl) CreateWindow(
 	}
 }
 
-func (ui *NoteDetailsWindowImpl) updateWidgetsData(n *service.Note) {
+func (ui *NoteDetailsWindowImpl) updateWidgetsData(n *model.Note) {
 	ui.note = n
 	// save the note title in case we update it (we need the old one to be able to save the note)
 	ui.oldTitle = n.Title
@@ -157,7 +157,7 @@ func (ui *NoteDetailsWindowImpl) UpdateNoteDetailsWidget() observer.Listener {
 			if note == nil {
 				return
 			}
-			n, ok := note.(*service.Note)
+			n, ok := note.(*model.Note)
 			if !ok {
 				log.Printf("Error cannot cast note struct: %v", note)
 				return
@@ -189,13 +189,13 @@ func (ui *NoteDetailsWindowImpl) UpdateNoteDetailsWidget() observer.Listener {
 func (ui *NoteDetailsWindowImpl) Close(clearData bool) {
 	// just to make sure nothing is left in the window
 	if clearData {
-		ui.updateWidgetsData(new(service.Note))
+		ui.updateWidgetsData(new(model.Note))
 	}
 	ui.w.Close()
 }
 
 // saveNote save a new note
-func (ui *NoteDetailsWindowImpl) saveNote() (note *service.Note, err error) {
+func (ui *NoteDetailsWindowImpl) saveNote() (note *model.Note, err error) {
 	if err = ui.noteService.CreateNote(ui.note); err != nil {
 		return
 	}

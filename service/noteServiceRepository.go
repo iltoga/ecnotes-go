@@ -8,15 +8,16 @@ import (
 
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
+	"github.com/iltoga/ecnotes-go/model"
 	"github.com/xujiajun/nutsdb"
 )
 
 // NoteServiceRepository interface for querying notes
 type NoteServiceRepository interface {
-	GetAllNotes() ([]Note, error)
-	GetNote(id int) (*Note, error)
-	CreateNote(note *Note) error
-	UpdateNote(note *Note) error
+	GetAllNotes() ([]model.Note, error)
+	GetNote(id int) (*model.Note, error)
+	CreateNote(note *model.Note) error
+	UpdateNote(note *model.Note) error
 	DeleteNote(id int) error
 	NoteExists(id int) (bool, error)
 	GetIDFromTitle(title string) int
@@ -68,8 +69,8 @@ func openDBConnection(dbPath string, resetDB bool) (*nutsdb.DB, error) {
 }
 
 // GetAllNotes retreives all notes from the db (already decrypted)
-func (nsr *NoteServiceRepositoryImpl) GetAllNotes() ([]Note, error) {
-	notes := []Note{}
+func (nsr *NoteServiceRepositoryImpl) GetAllNotes() ([]model.Note, error) {
+	notes := []model.Note{}
 	if err := nsr.db.View(
 		func(tx *nutsdb.Tx) error {
 			entries, err := tx.GetAll(nsr.bucket)
@@ -78,7 +79,7 @@ func (nsr *NoteServiceRepositoryImpl) GetAllNotes() ([]Note, error) {
 			}
 
 			for _, entry := range entries {
-				var note Note
+				var note model.Note
 				if err := common.UnmarshalJSON(entry.Value, &note); err != nil {
 					return err
 				}
@@ -93,8 +94,8 @@ func (nsr *NoteServiceRepositoryImpl) GetAllNotes() ([]Note, error) {
 }
 
 // GetNote retreives a note from the db by its ID (already decrypted)
-func (nsr *NoteServiceRepositoryImpl) GetNote(id int) (*Note, error) {
-	var note *Note
+func (nsr *NoteServiceRepositoryImpl) GetNote(id int) (*model.Note, error) {
+	var note *model.Note
 	if err := nsr.db.View(
 		func(tx *nutsdb.Tx) error {
 			dbEntry, err := tx.Get(nsr.bucket, nsr.getDBKeyFromID(id))
@@ -110,8 +111,8 @@ func (nsr *NoteServiceRepositoryImpl) GetNote(id int) (*Note, error) {
 }
 
 // CreateNote adds a new note to the db
-// Note: note's content has already been encrypted at service layer
-func (nsr *NoteServiceRepositoryImpl) CreateNote(note *Note) error {
+// model.Note: note's content has already been encrypted at service layer
+func (nsr *NoteServiceRepositoryImpl) CreateNote(note *model.Note) error {
 	var (
 		key        = []byte(fmt.Sprintf("%d", note.ID))
 		value, err = common.MarshalJSON(note)
@@ -128,7 +129,7 @@ func (nsr *NoteServiceRepositoryImpl) CreateNote(note *Note) error {
 }
 
 // UpdateNote update a note in the db
-func (nsr *NoteServiceRepositoryImpl) UpdateNote(note *Note) error {
+func (nsr *NoteServiceRepositoryImpl) UpdateNote(note *model.Note) error {
 	if exists, _ := nsr.NoteExists(note.ID); !exists {
 		return errors.New(common.ERR_NOTE_NOT_FOUND)
 	}

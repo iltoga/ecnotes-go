@@ -8,6 +8,7 @@ import (
 
 	"fyne.io/fyne/v2/app"
 	"github.com/iltoga/ecnotes-go/lib/common"
+	"github.com/iltoga/ecnotes-go/model"
 	"github.com/iltoga/ecnotes-go/service"
 	"github.com/iltoga/ecnotes-go/service/observer"
 	"github.com/iltoga/ecnotes-go/ui"
@@ -58,7 +59,7 @@ func main() {
 	// TODO: load some defaults from configuration?
 	emptyOptions := make(map[string]interface{})
 	mainWindow.CreateWindow("EcNotes", 600, 800, true, emptyOptions)
-	noteDetailWindow := ui.NewNoteDetailsWindow(appUI, new(service.Note))
+	noteDetailWindow := ui.NewNoteDetailsWindow(appUI, new(model.Note))
 	obs.AddListener(observer.EVENT_UPDATE_NOTE, noteDetailWindow.UpdateNoteDetailsWidget())
 	obs.AddListener(observer.EVENT_CREATE_NOTE, noteDetailWindow.UpdateNoteDetailsWidget())
 	// TODO: for now selcting a note opens is in 'update mode' and we probably don't need this event.
