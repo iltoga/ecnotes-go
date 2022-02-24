@@ -7,7 +7,7 @@ import "github.com/iltoga/ecnotes-go/model"
 // Note: the relative service must be able to get/put/delete/find notes from the provider
 type SyncNoteProvider interface {
 	// GetNotes returns a list of notes from the provider
-	GetNotes() ([]model.Note, error)
+	GetNotes(ids ...int) ([]model.Note, error)
 	// GetNoteIDs returns the list of note IDs from the provider
 	GetNoteIDs(forceRemote bool) ([]int, error)
 	// GetNote returns the note with the given id
@@ -16,10 +16,8 @@ type SyncNoteProvider interface {
 	PutNote(note *model.Note) error
 	// DeleteNote deletes the note with the given id
 	DeleteNote(id int) error
-	// FindNotes returns all notes that match the given query
-	FindNotes(query string) ([]model.Note, error)
-	// SyncNotes syncs the notes from the provider to the local database and vice versa
-	SyncNotes() error
+	// SyncNotes syncs the notes from the provider with the local database
+	SyncNotes(dbNotes []model.Note) error
 	// Init initializes the provider
 	Init() error
 }
