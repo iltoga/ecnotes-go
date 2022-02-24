@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"sync"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/model"
+	"github.com/iltoga/ecnotes-go/service/observer"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
@@ -28,6 +30,8 @@ type GoogleProvider struct {
 	idsMux         *sync.RWMutex
 	updAtMux       *sync.RWMutex
 	ctx            context.Context
+	logger         *log.Logger
+	observer       observer.Observer
 }
 
 // NewGoogleProvider creates a new Google provider
@@ -35,6 +39,8 @@ func NewGoogleProvider(
 	sheetName string,
 	sheetID string,
 	credFilePath string,
+	logger *log.Logger,
+	observer observer.Observer,
 ) (*GoogleProvider, error) {
 	gp := &GoogleProvider{
 		sheetName:      sheetName,
@@ -44,6 +50,8 @@ func NewGoogleProvider(
 		notesUpdatedAt: make(map[int]int64),
 		idsMux:         &sync.RWMutex{},
 		updAtMux:       &sync.RWMutex{},
+		logger:         logger,
+		observer:       observer,
 	}
 	if err := gp.Init(); err != nil {
 		return nil, err
@@ -182,7 +190,7 @@ func (gp *GoogleProvider) GetNoteIDs(forceRemote bool) (map[int]int, error) {
 func (gp *GoogleProvider) GetNote(id int) (*model.Note, error) {
 	// if noteIds map is empty, populate it
 	if len(gp.noteIds) == 0 {
-		_, err := gp.GetNoteIDs(false)
+		_, err := gp.GetNoteIDs(true)
 		if err != nil {
 			return nil, err
 		}
@@ -213,7 +221,7 @@ func (gp *GoogleProvider) GetNote(id int) (*model.Note, error) {
 func (gp *GoogleProvider) PutNote(note *model.Note) error {
 	// if noteIds map is empty, populate it
 	if len(gp.noteIds) == 0 {
-		_, err := gp.GetNoteIDs(false)
+		_, err := gp.GetNoteIDs(true)
 		if err != nil {
 			return err
 		}
@@ -248,7 +256,7 @@ func (gp *GoogleProvider) PutNote(note *model.Note) error {
 func (gp *GoogleProvider) DeleteNote(id int) error {
 	// if noteIds map is empty, populate it
 	if len(gp.noteIds) == 0 {
-		_, err := gp.GetNoteIDs(false)
+		_, err := gp.GetNoteIDs(true)
 		if err != nil {
 			return err
 		}
@@ -317,7 +325,12 @@ func (gp *GoogleProvider) SyncNotes(dbNotes []model.Note) error {
 			dbNotes[idx] = *note
 		}
 	}
-
+	// build the note titles array
+	noteTitles := make([]string, len(dbNotes))
+	for idx, note := range dbNotes {
+		noteTitles[idx] = note.Title
+	}
+	gp.observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, noteTitles)
 	return nil
 }
 
@@ -362,4 +375,53 @@ func (*GoogleProvider) ParseSheetRow(row []interface{}) model.Note {
 		UpdatedAt: common.StringToInt64(row[6].(string)),
 	}
 	return note
+}
+
+// UpdateNoteNotifier creates a new note observer to notify the provider when a note is created or updated
+func (gp *GoogleProvider) UpdateNoteNotifier() observer.Listener {
+	return observer.Listener{
+		OnNotify: func(note interface{}, args ...interface{}) {
+			if note == nil {
+				return
+			}
+			// the encrypted note is args[2]. Check if exists and if it is encrypted
+			if len(args) < 3 {
+				gp.logger.Error("The note is not encrypted. Cannot push it to google sheets")
+				return
+			}
+			n, ok := args[2].(*model.Note)
+			if !ok {
+				gp.logger.Errorf("Error cannot cast note struct: %v", note)
+				return
+			}
+
+			// put the note in the provider
+			err := gp.PutNote(n)
+			if err != nil {
+				gp.logger.Errorf("Error pushing note to google sheets: %v", err)
+			}
+		},
+	}
+}
+
+// DeleteNoteNotifier creates a new note observer to notify the provider when a note is deleted
+func (gp *GoogleProvider) DeleteNoteNotifier() observer.Listener {
+	return observer.Listener{
+		OnNotify: func(note interface{}, args ...interface{}) {
+			if note == nil {
+				return
+			}
+			n, ok := note.(*model.Note)
+			if !ok {
+				gp.logger.Errorf("Error cannot cast note struct: %v", note)
+				return
+			}
+
+			// delete the note from the provider
+			err := gp.DeleteNote(n.ID)
+			if err != nil {
+				gp.logger.Errorf("Error deleting from google sheets: %v", err)
+			}
+		},
+	}
 }

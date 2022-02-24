@@ -61,7 +61,7 @@ func (ui *MainWindowImpl) createWindowContainer() *fyne.Container {
 	// create buttons
 	newNoteBtn := widget.NewButton("New", func() {
 		ui.GetObserver().
-			Notify(observer.EVENT_CREATE_NOTE, new(model.Note), common.WindowMode_Edit, common.WindowAction_New)
+			Notify(observer.EVENT_CREATE_NOTE_WINDOW, new(model.Note), common.WindowMode_Edit, common.WindowAction_New)
 		// set note details window to be visible
 		if err := ui.SetWindowVisibility(common.WIN_NOTE_DETAILS, true); err != nil {
 			ui.ShowNotification("Error", err.Error())
@@ -276,7 +276,7 @@ func (ui *MainWindowImpl) createNoteList(titles []string) fyne.CanvasObject {
 			return
 		}
 		ui.GetObserver().Notify(
-			observer.EVENT_UPDATE_NOTE,
+			observer.EVENT_UPDATE_NOTE_WINDOW,
 			ui.selectedNote,
 			common.WindowMode_Edit,
 			common.WindowAction_Update)

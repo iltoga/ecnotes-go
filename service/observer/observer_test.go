@@ -17,7 +17,6 @@ func TestNewObserver(t *testing.T) {
 		name string
 		want Observer
 	}{
-		// Add test cases.
 		{
 			name: "TestNewObserver",
 			want: &ObserverImpl{},
@@ -33,7 +32,7 @@ func TestNewObserver(t *testing.T) {
 }
 
 func TestObserver_AddListener(t *testing.T) {
-	mockOnNotify = func(block interface{}, args ...interface{}) {}
+	mockOnNotify = func(note interface{}, args ...interface{}) {}
 
 	type fields struct {
 		Listeners map[Event][]Listener
@@ -47,7 +46,6 @@ func TestObserver_AddListener(t *testing.T) {
 		fields fields
 		args   args
 	}{
-		// Add test cases.
 		{
 			name: "TestObserver_AddListener:new",
 			fields: fields{
@@ -89,7 +87,6 @@ func TestObserver_Remove(t *testing.T) {
 		fields fields
 		args   args
 	}{
-		// Add test cases.
 		{
 			name: "TestObserver_Remove",
 			fields: fields{
@@ -121,7 +118,6 @@ func TestObserver_Notify(t *testing.T) {
 		fields fields
 		args   args
 	}{
-		// Add test cases.
 		{
 			name: "TestObserver_Notify",
 			fields: fields{

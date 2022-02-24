@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -34,7 +35,7 @@ type ConfigServiceImpl struct {
 }
 
 // NewConfigService ....
-func NewConfigService() ConfigService {
+func NewConfigService() (ConfigService, error) {
 	srv := &ConfigServiceImpl{
 		ResourcePath: common.DEFAULT_RESOURCE_PATH,
 		Config:       make(map[string]string),
@@ -43,8 +44,8 @@ func NewConfigService() ConfigService {
 		ConfigMux:    &sync.RWMutex{},
 		GlobalsMux:   &sync.RWMutex{},
 	}
-	srv.init()
-	return srv
+	err := srv.init()
+	return srv, err
 }
 
 // setDefaultConfig set some default values in the config map if they are not set yet
@@ -52,6 +53,13 @@ func (c *ConfigServiceImpl) setDefaultConfig() {
 	// set default config for db path
 	if _, ok := c.Config[common.CONFIG_KVDB_PATH]; !ok {
 		c.Config[common.CONFIG_KVDB_PATH] = filepath.Join(c.ResourcePath, common.DEFAULT_DB_PATH)
+	}
+	// set default config for log file path and level
+	if _, ok := c.Config[common.CONFIG_LOG_FILE_PATH]; !ok {
+		c.Config[common.CONFIG_LOG_FILE_PATH] = filepath.Join(c.ResourcePath, common.DEFAULT_LOG_FILE_PATH)
+	}
+	if _, ok := c.Config[common.CONFIG_LOG_LEVEL]; !ok {
+		c.Config[common.CONFIG_LOG_LEVEL] = common.DEFAULT_LOG_LEVEL
 	}
 	// set default config for google credentials file path (defaults to user home directory .config/ecnotes)
 	// note: the directory will be automatically created, but you must manually copy the file inside it
@@ -76,22 +84,25 @@ func (c *ConfigServiceImpl) setDefaultConfig() {
 			}
 		}
 		// set default credentials file
-		c.Config[common.CONFIG_GOOGLE_CREDENTIALS_FILE] = filepath.Join(googleProviderPath, "cred_serviceaccount.json")
+		c.Config[common.CONFIG_GOOGLE_CREDENTIALS_FILE_PATH] = filepath.Join(
+			googleProviderPath,
+			"cred_serviceaccount.json",
+		)
 	}
 }
 
-func (c *ConfigServiceImpl) init() {
+func (c *ConfigServiceImpl) init() error {
 	// check if the default resource path exists
 	if _, err := os.Stat(c.ResourcePath); os.IsNotExist(err) {
 		// if not, try to get the user's home directory
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			log.Fatalf("Could not get user's home directory")
+			return err
 		}
 		// create the default resource path if not exists
 		resourcePath := filepath.Join(homeDir, ".config", "ecnotes")
 		if err := os.MkdirAll(resourcePath, 0755); err != nil {
-			log.Fatalf("Failed to create resource path: %s", resourcePath)
+			return fmt.Errorf("failed to create directory: %s", resourcePath)
 		}
 		c.ResourcePath = resourcePath
 	}
@@ -103,20 +114,21 @@ func (c *ConfigServiceImpl) init() {
 		// create the default config file
 		f, err := os.Create(configFilePath)
 		if err != nil {
-			log.Fatalf("Failed to create config file: %s", configFilePath)
+			return fmt.Errorf("failed to create config file: %s", configFilePath)
 		}
 		f.Close()
 	} else {
 		// update the config file in case we updated the default configuration with new values
 		if err := c.LoadConfig(); err != nil {
-			log.Fatalf("Failed to load config file: %s", configFilePath)
+			return fmt.Errorf("failed to load config file: %s", configFilePath)
 		}
 	}
 	// set some default values (if not set yet)
 	c.setDefaultConfig()
 	if err := c.SaveConfig(); err != nil {
-		log.Fatalf("Failed to save config file: %s", configFilePath)
+		return fmt.Errorf("failed to save config file: %s", configFilePath)
 	}
+	return nil
 }
 
 // GetResourcePath  ....

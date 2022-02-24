@@ -23,16 +23,16 @@ type (
 )
 
 var (
-	observerInstance  *ObserverImpl
+	obs               *ObserverImpl
 	singletonObserver sync.Once
 )
 
 // NewObserver get single global instance of Observer
 func NewObserver() *ObserverImpl {
 	singletonObserver.Do(func() {
-		observerInstance = &ObserverImpl{}
+		obs = &ObserverImpl{}
 	})
-	return observerInstance
+	return obs
 }
 
 // AddListener add new listener in observer

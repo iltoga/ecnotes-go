@@ -164,12 +164,12 @@ func (ns *NoteServiceImpl) CreateNote(note *model.Note) error {
 		return err
 	}
 	err := ns.NoteRepo.CreateNote(note)
-	// TODO: maybe refactor Crete/Update note to encrypt content but return the original (unencrypted) content
-	// this is to avoid showing the note content encrypted in the UI
-	note.Content = oldContent
-	note.Encrypted = false
+	// notify both the unencrypted and the encrypted note
+	decNote := *note
+	decNote.Content = oldContent
+	decNote.Encrypted = false
 	// emit a note created event that will update the note details in the UI (note details window)
-	ns.Observer.Notify(observer.EVENT_CREATE_NOTE, note, common.WindowMode_Edit, common.WindowAction_Update)
+	ns.Observer.Notify(observer.EVENT_CREATE_NOTE, decNote, common.WindowMode_Edit, common.WindowAction_Update, note)
 	return err
 }
 
@@ -199,11 +199,12 @@ func (ns *NoteServiceImpl) UpdateNoteContent(note *model.Note) error {
 	err := ns.NoteRepo.UpdateNote(note)
 	// TODO: maybe refactor Crete/Update note to encrypt content but return the original (unencrypted) content
 	// this is to avoid showing the note content encrypted in the UI
-	note.Content = oldContent
-	note.Encrypted = false
+	decNote := *note
+	decNote.Content = oldContent
+	decNote.Encrypted = false
 
 	// emit a note created event that will update the note details in the UI (note details window)
-	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE, note, common.WindowMode_Edit, common.WindowAction_Update)
+	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE, decNote, common.WindowMode_Edit, common.WindowAction_Update, note)
 	return err
 }
 
@@ -294,10 +295,15 @@ func (ns *NoteServiceImpl) DeleteNote(id int) error {
 			break
 		}
 	}
+	if err = ns.NoteRepo.DeleteNote(id); err != nil {
+		return err
+	}
+
 	// emit a note titles' update event
 	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
+	ns.Observer.Notify(observer.EVENT_DELETE_NOTE, note, common.WindowMode_Edit, common.WindowAction_Update)
 	// Note: no need to emit a note update/delete event. since we are deleting a note, we don't need to update the note details in the UI, but just clear the data and hide the note details window
-	return ns.NoteRepo.DeleteNote(id)
+	return nil
 }
 
 // EncryptNote ....

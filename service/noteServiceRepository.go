@@ -84,7 +84,6 @@ func (nsr *NoteServiceRepositoryImpl) GetAllNotes() ([]model.Note, error) {
 					return err
 				}
 				notes = append(notes, note)
-				// fmt.Println(string(entry.Key), string(entry.Value))
 			}
 			return nil
 		}); err != nil {

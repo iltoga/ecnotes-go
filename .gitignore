@@ -13,8 +13,12 @@ ecnotes-go.tar.xz
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
+# Log files
+*.log
+
 # Sensitive files which shouldn't be in version control
 resources/config.toml
+resources/logs/
 
 # Dependency directories (remove the comment below to include it)
 resources/db/
