@@ -34,6 +34,11 @@ func NewMainWindow(ui *UImpl) MainWindow {
 	}
 }
 
+// GetWindow returns the window object
+func (ui *MainWindowImpl) GetWindow() fyne.Window {
+	return ui.w
+}
+
 // createWindowContainer creates a container with the window content
 func (ui *MainWindowImpl) createWindowContainer() *fyne.Container {
 	var winLoaderText string
@@ -223,7 +228,6 @@ func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bo
 
 	// create main window menu
 	w.SetMainMenu(ui.createMainWindowMenu())
-
 	// create window container
 	mainLayout := ui.createWindowContainer()
 	w.SetMaster()
@@ -240,14 +244,15 @@ func (ui *MainWindowImpl) runNoteList() fyne.CanvasObject {
 		// load notes from db (and populate titles array)
 		_, err := ui.noteService.GetNotes()
 		if err != nil {
+			return &widget.Card{
+				Title: "error",
+				Content: widget.NewLabel(
+					err.Error(),
+				),
+			}
+		}
+		if len(titles) == 0 {
 			ui.ShowNotification("", "Note list is empty")
-			// ui.ShowNotification("Error", err.Error())
-			// return &widget.Card{
-			// 	Title: "Error",
-			// 	Content: widget.NewLabel(
-			// 		err.Error(),
-			// 	),
-			// }
 		}
 		titles = ui.noteService.GetTitles()
 	}

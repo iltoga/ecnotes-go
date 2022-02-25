@@ -26,6 +26,7 @@ var (
 	obs            = observer.NewObserver()
 	defaultBucket  = "notes"
 	logger         *log.Logger
+	quitSignalChan chan os.Signal
 )
 
 func init() {
@@ -82,9 +83,10 @@ func setupDb() (err error) {
 }
 
 func main() {
-	setupCloseHandler()
+	logger.Info("Starting...")
+	quitSignalChan = make(chan os.Signal, 1)
+	setupCloseHandler(quitSignalChan)
 
-	fmt.Println("Starting...")
 	// create a new ui
 	appUI := ui.NewUI(app.NewWithID("ec-notes"), configService, noteService, obs)
 	mainWindow := ui.NewMainWindow(appUI)
@@ -95,6 +97,11 @@ func main() {
 	// TODO: load some defaults from configuration?
 	emptyOptions := make(map[string]interface{})
 	mainWindow.CreateWindow("EcNotes", 600, 800, true, emptyOptions)
+	mainWindow.GetWindow().SetOnClosed(
+		func() {
+			quitSignalChan <- syscall.SIGQUIT
+		},
+	)
 	noteDetailWindow := ui.NewNoteDetailsWindow(appUI, new(model.Note))
 	// update note window when clicking on update note button
 	obs.AddListener(observer.EVENT_UPDATE_NOTE, noteDetailWindow.UpdateNoteDetailsWidget())
@@ -165,6 +172,8 @@ func setupProviders() (err error) {
 	sheetID, err = configService.GetConfig(common.CONFIG_GOOGLE_SHEET_ID)
 	if err != nil {
 		// no google sheet id in config, skip
+		logger.Info("No google_sheet_id in config.toml, skipping google provider setup")
+		logger.Info("Google provider not activated: notes will NOT be synced to google sheet")
 		return nil
 	}
 	credFilePath, _ := configService.GetConfig(common.CONFIG_GOOGLE_CREDENTIALS_FILE_PATH)
@@ -180,9 +189,21 @@ func setupProviders() (err error) {
 
 	// sync notes from google sheet to db (two way sync)
 	// TODO: make this optional and start sync after ui is loaded, so we can show a loading screen
-	if dbNotes, err := noteService.GetNotes(); err == nil {
+	var dbNotes []model.Note
+	var downloadedNotes []model.Note
+	if dbNotes, err = noteService.GetNotes(); err == nil {
 		logger.Info("Syncing notes from google sheets...")
-		gp.SyncNotes(dbNotes)
+		downloadedNotes, err = gp.SyncNotes(dbNotes)
+		if err != nil {
+			return
+		}
+		// if downloaded notes are not empty, update db with downloaded notes
+		if len(downloadedNotes) > 0 {
+			err = noteService.CreateEncryptedNotes(downloadedNotes)
+			if err != nil {
+				return
+			}
+		}
 		logger.Info("Sync complete")
 	}
 	return
@@ -191,19 +212,16 @@ func setupProviders() (err error) {
 // setupCloseHandler creates a 'listener' on a new goroutine which will notify the
 // program if it receives an interrupt from the OS. We then handle this by calling
 // our clean up procedure and exiting the program.
-func setupCloseHandler() {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+func setupCloseHandler(c chan os.Signal) {
+	signal.Notify(quitSignalChan, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
 	go func() {
 		<-c
-		fmt.Println("\r- Ctrl+C pressed in Terminal")
 		cleanup()
-		os.Exit(0)
 	}()
 }
 
 func cleanup() {
-	fmt.Println("Cleanup...")
+	logger.Info("Cleanup...")
 	// close logger file
 	if logFile, ok := logger.Out.(*os.File); ok {
 		if err := logFile.Close(); err != nil {

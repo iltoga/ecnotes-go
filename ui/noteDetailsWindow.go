@@ -38,6 +38,11 @@ func NewNoteDetailsWindow(ui *UImpl, note *model.Note) NoteDetailsWindow {
 	}
 }
 
+// GetWindow returns the window object
+func (ui *NoteDetailsWindowImpl) GetWindow() fyne.Window {
+	return ui.w
+}
+
 // ParseDefaultOptions ....
 func (ui *NoteDetailsWindowImpl) ParseDefaultOptions(options map[string]interface{}) {
 	if val := common.GetMapValOrNil(options, common.OPT_WINDOW_ACTION); val != nil {

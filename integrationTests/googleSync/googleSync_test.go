@@ -6,6 +6,8 @@ import (
 
 	"github.com/iltoga/ecnotes-go/model"
 	"github.com/iltoga/ecnotes-go/provider"
+	"github.com/iltoga/ecnotes-go/service/observer"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
@@ -68,6 +70,8 @@ func getGP() *provider.GoogleProvider {
 		testSheetName,
 		testSheetID,
 		"/home/demo/.config/ecnotes/providers/google/cred_serviceaccount.json",
+		logrus.New(),           //TODO: mock logger
+		observer.NewObserver(), // TODO: mock observer
 	)
 	if err != nil {
 		panic(err)
@@ -251,7 +255,7 @@ func (s *googleSyncTest) TestSyncNotes() {
 	// combine new notes and defaultNotes
 	dbNotes := append(defaultNotes, newNotes...)
 	// sync notes and assert it
-	err := gp.SyncNotes(dbNotes)
+	_, err := gp.SyncNotes(dbNotes)
 	assert.Nil(t, err)
 	// read and print all notes
 	notes, err := gp.GetNotes()

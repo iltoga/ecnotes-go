@@ -18,6 +18,7 @@ type NoteService interface {
 	GetTitles() []string
 	SearchNotes(query string, fuzzySearch bool) ([]string, error)
 	CreateNote(note *model.Note) error
+	CreateEncryptedNotes(notes []model.Note) error
 	UpdateNoteContent(note *model.Note) error
 
 	UpdateNoteTitle(oldTitle, newTitle string) (noteID int, err error)
@@ -73,8 +74,14 @@ func (ns *NoteServiceImpl) GetNoteWithContent(id int) (*model.Note, error) {
 func (ns *NoteServiceImpl) GetNotes() ([]model.Note, error) {
 	notes, err := ns.NoteRepo.GetAllNotes()
 	if err != nil {
-		return nil, err
+		// on empty bucket don't return an error
+		if err.Error() == common.ERR_BUCKET_EMPTY {
+			notes = []model.Note{}
+		} else {
+			return nil, err
+		}
 	}
+	ns.Titles = []string{}
 	for idx, note := range notes {
 		ns.Titles = append(ns.Titles, note.Title)
 		// swap the note with the decrypted one
@@ -130,6 +137,23 @@ func (ns *NoteServiceImpl) searchExact(query string, titles []string) []string {
 		}
 	}
 	return []string{}
+}
+
+// CreateEncryptedNotes save to db a batch of (already) encrypted notes
+// TODO: refactor this method to use a batch insert	instead of a loop
+func (ns *NoteServiceImpl) CreateEncryptedNotes(notes []model.Note) error {
+	// loop through the notes and save them to db
+	for _, note := range notes {
+		if err := ns.NoteRepo.CreateNote(&note); err != nil {
+			return err
+		}
+	}
+	// get all note titles from db and notify the observer
+	_, err := ns.GetNotes()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // CreateNote ....

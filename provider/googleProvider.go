@@ -282,11 +282,12 @@ func (gp *GoogleProvider) DeleteNote(id int) error {
 
 // SyncNotes syncs the notes from the provider to the local database and vice versa
 // to correctly sync, we need to get all note ID (columb A of the sheet) and UpdatedAt fields (column G of the sheet) from the provider, then we need to get all notes from the local database, then we need to compare the two lists and sync the notes
-func (gp *GoogleProvider) SyncNotes(dbNotes []model.Note) error {
+// return the notes to be added to the local database
+func (gp *GoogleProvider) SyncNotes(dbNotes []model.Note) (downloaded []model.Note, err error) {
 	// get ids and updated at from the provider
 	noteIds, err := gp.GetNoteIDs(true)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	gp.updAtMux.RLock()
 	noteUpdAt := gp.notesUpdatedAt
@@ -295,43 +296,79 @@ func (gp *GoogleProvider) SyncNotes(dbNotes []model.Note) error {
 	// loop through the local notes and check if they exist in the provider.
 	// if they do not exist, put them in the provider
 	// if they do exist, check if they have been updated since the last sync and update them in the provider if they have
-	for idx, localNote := range dbNotes {
+	for idx, dbNote := range dbNotes {
 		// check if the note exists in the provider
-		_, ok := noteIds[localNote.ID]
+		_, ok := noteIds[dbNote.ID]
 		if !ok {
 			// if not, create it
-			err := gp.PutNote(&localNote)
+			err := gp.PutNote(&dbNote)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			continue
 		}
 		// if yes, check if it has been updated since the last sync
-		if localNote.UpdatedAt > noteUpdAt[localNote.ID] {
+		if dbNote.UpdatedAt > noteUpdAt[dbNote.ID] {
 			// if yes, update it in the provider
-			err := gp.PutNote(&localNote)
+			err := gp.PutNote(&dbNote)
 			if err != nil {
-				return err
+				return nil, err
 			}
+			continue
 		}
 		// if the the note from the provider has been updated since the last sync, update the local note with the new data
-		if localNote.UpdatedAt < noteUpdAt[localNote.ID] {
+		if dbNote.UpdatedAt < noteUpdAt[dbNote.ID] {
 			// get the note from the provider
-			note, err := gp.GetNote(localNote.ID)
+			note, err := gp.GetNote(dbNote.ID)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			// update the local note with the new data
 			dbNotes[idx] = *note
 		}
 	}
+	// loop through the provider notes and check if they exist in the local database.
+	// if they do not exist, get them from the provider and put them in the local database
+	toAdd := make([]model.Note, 0)
+	for noteID, _ := range noteIds {
+		// check if the noteID exists dbNotes
+		if len(dbNotes) == 0 {
+			// if dbNotes is empty, get the note from the provider
+			note, err := gp.GetNote(noteID)
+			if err != nil {
+				return nil, err
+			}
+			// add the note to the local database
+			toAdd = append(toAdd, *note)
+			continue
+		}
+		// if the noteID does not exist in dbNotes, get it from the provider
+		found := false
+		for _, dbNote := range dbNotes {
+			if dbNote.ID == noteID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			// get the note from the provider
+			note, err := gp.GetNote(noteID)
+			if err != nil {
+				return nil, err
+			}
+			// add the note to the local database
+			toAdd = append(toAdd, *note)
+		}
+
+	}
+
 	// build the note titles array
 	noteTitles := make([]string, len(dbNotes))
 	for idx, note := range dbNotes {
 		noteTitles[idx] = note.Title
 	}
 	gp.observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, noteTitles)
-	return nil
+	return toAdd, nil
 }
 
 // Init initializes the provider
