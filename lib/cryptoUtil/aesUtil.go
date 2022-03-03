@@ -4,19 +4,18 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/hex"
 	"io"
 )
 
 // EncryptMessage encrypts a message using a password
-func EncryptMessage(message string, passPhrase string) (encmess string, err error) {
+func EncryptMessage(message []byte, passPhrase string) ([]byte, error) {
 	// hash the password with SHA256 (just to make some noise)
 	key := Hash(passPhrase)
 	return EncryptAES256(key, message)
 }
 
 // DecryptMessage decrypts an encrypted message using a password
-func DecryptMessage(message string, passPhrase string) (encmess string, err error) {
+func DecryptMessage(message []byte, passPhrase string) ([]byte, error) {
 	// hash the password with SHA256 (just to make some noise)
 	key := Hash(passPhrase)
 	return DecryptAES256(key, message)
@@ -26,9 +25,7 @@ func DecryptMessage(message string, passPhrase string) (encmess string, err erro
 //  key is the encryption key (must be 32 bytes)
 //  message is the string to be encrypted
 //  returns the (b64 encoded) encrypted message, or an error if the key is not 32 bytes
-func EncryptAES256(key []byte, message string) (encmess string, err error) {
-	plaintext := []byte(message)
-
+func EncryptAES256(key []byte, plaintext []byte) (encmess []byte, err error) {
 	// Create a new Cipher Block from the key
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -52,17 +49,12 @@ func EncryptAES256(key []byte, message string) (encmess string, err error) {
 	// Since we don't want to save the nonce somewhere else in this case, we add it as a prefix to the encrypted data. The first nonce argument in Seal is the prefix.
 	ciphertext := aesGCM.Seal(nonce, nonce, plaintext, nil)
 	// returns to base64 encoded string
-	encmess = hex.EncodeToString(ciphertext)
+	encmess = ciphertext
 	return
 }
 
 // DecryptAES256 ....
-func DecryptAES256(key []byte, securemess string) (decodedmess string, err error) {
-	enc, err := hex.DecodeString(securemess)
-	if err != nil {
-		return "", err
-	}
-
+func DecryptAES256(key []byte, securemess []byte) (decodedmess []byte, err error) {
 	// Create a new Cipher Block from the key
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -79,13 +71,13 @@ func DecryptAES256(key []byte, securemess string) (decodedmess string, err error
 	nonceSize := aesGCM.NonceSize()
 
 	// Extract the nonce from the encrypted data
-	nonce, ciphertext := enc[:nonceSize], enc[nonceSize:]
+	nonce, ciphertext := securemess[:nonceSize], securemess[nonceSize:]
 
 	// Decrypt the data
 	plaintext, err := aesGCM.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return
 	}
-	decodedmess = string(plaintext)
+	decodedmess = plaintext
 	return
 }

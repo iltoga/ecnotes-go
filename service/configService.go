@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -16,9 +17,13 @@ import (
 type ConfigService interface {
 	GetResourcePath() string
 	GetGlobal(key string) (string, error)
+	GetGlobalBytes(key string) ([]byte, error)
 	SetGlobal(key string, value string)
+	SetGlobalBytes(key string, value []byte)
 	GetConfig(key string) (string, error)
+	GetConfigBytes(key string) ([]byte, error)
 	SetConfig(key string, value string) error
+	SetConfigBytes(key string, value []byte) error
 	LoadConfig() error
 	ParseConfigTree(configTree *toml.Tree)
 	SaveConfig() error
@@ -60,6 +65,10 @@ func (c *ConfigServiceImpl) setDefaultConfig() {
 	}
 	if _, ok := c.Config[common.CONFIG_LOG_LEVEL]; !ok {
 		c.Config[common.CONFIG_LOG_LEVEL] = common.DEFAULT_LOG_LEVEL
+	}
+	// set default config for encryption algorithm
+	if _, ok := c.Config[common.CONFIG_ENCRYPTION_ALGORITHM]; !ok {
+		c.Config[common.CONFIG_ENCRYPTION_ALGORITHM] = common.DEFAULT_ENCRYPTION_ALGORITHM
 	}
 	// set default config for google credentials file path (defaults to user home directory .config/ecnotes)
 	// note: the directory will be automatically created, but you must manually copy the file inside it
@@ -136,7 +145,7 @@ func (c *ConfigServiceImpl) GetResourcePath() string {
 	return c.ResourcePath
 }
 
-// GetConfig ....
+// GetConfig return the value of the given key from the config map
 func (c *ConfigServiceImpl) GetConfig(key string) (string, error) {
 	if err := c.checkAndLoad(); err != nil {
 		return "", err
@@ -147,6 +156,22 @@ func (c *ConfigServiceImpl) GetConfig(key string) (string, error) {
 		return val, nil
 	}
 	return "", errors.New("key not found")
+}
+
+// GetGlobalBytes same as above, for byte arrays
+func (c *ConfigServiceImpl) GetConfigBytes(key string) ([]byte, error) {
+	if err := c.checkAndLoad(); err != nil {
+		return nil, err
+	}
+	c.ConfigMux.RLock()
+	defer c.ConfigMux.RUnlock()
+	if val, ok := c.Config[key]; ok {
+		if valHex, err := hex.DecodeString(val); err == nil {
+			return valHex, nil
+		}
+		return nil, errors.New(common.ERR_INVALID_HEX_STRING)
+	}
+	return nil, errors.New("key not found")
 }
 
 // SetConfig ....
@@ -160,6 +185,18 @@ func (c *ConfigServiceImpl) SetConfig(key string, value string) error {
 	return nil
 }
 
+// SetConfigBytes same as above, for byte arrays
+// note: the byte array is encoded as hexadecimal string
+func (c *ConfigServiceImpl) SetConfigBytes(key string, value []byte) error {
+	if err := c.checkAndLoad(); err != nil {
+		return err
+	}
+	c.ConfigMux.Lock()
+	defer c.ConfigMux.Unlock()
+	c.Config[key] = hex.EncodeToString(value)
+	return nil
+}
+
 // GetGlobal ....
 func (c *ConfigServiceImpl) GetGlobal(key string) (string, error) {
 	c.GlobalsMux.RLock()
@@ -170,11 +207,31 @@ func (c *ConfigServiceImpl) GetGlobal(key string) (string, error) {
 	return "", errors.New("key not found")
 }
 
+// GetGlobalBytes same as above, for byte arrays
+func (c *ConfigServiceImpl) GetGlobalBytes(key string) ([]byte, error) {
+	c.GlobalsMux.RLock()
+	defer c.GlobalsMux.RUnlock()
+	if val, ok := c.Globals[key]; ok {
+		if valHex, err := hex.DecodeString(val); err == nil {
+			return valHex, nil
+		}
+		return nil, errors.New(common.ERR_INVALID_HEX_STRING)
+	}
+	return nil, errors.New("key not found")
+}
+
 // SetGlobal ....
 func (c *ConfigServiceImpl) SetGlobal(key string, value string) {
 	c.GlobalsMux.Lock()
 	defer c.GlobalsMux.Unlock()
 	c.Globals[key] = value
+}
+
+// SetGlobalBytes same as above, for byte arrays
+func (c *ConfigServiceImpl) SetGlobalBytes(key string, value []byte) {
+	c.GlobalsMux.Lock()
+	defer c.GlobalsMux.Unlock()
+	c.Globals[key] = hex.EncodeToString(value)
 }
 
 // ParseConfigTree ....

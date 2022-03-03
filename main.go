@@ -27,6 +27,7 @@ var (
 	defaultBucket  = "notes"
 	logger         *log.Logger
 	quitSignalChan chan os.Signal
+	cryptoService  service.CryptoService
 )
 
 func init() {
@@ -44,8 +45,12 @@ func init() {
 		os.Exit(1)
 	}
 
+	// if err = setupCryptoService(); err != nil {
+	// 	logger.Fatal(err)
+	// }
+
 	// setup db connection
-	if err = setupDb(); err != nil {
+	if err = setupDb(cryptoService); err != nil {
 		logger.Fatal(err)
 	}
 
@@ -53,6 +58,16 @@ func init() {
 	if err = setupProviders(); err != nil {
 		logger.Fatal(err)
 	}
+}
+
+// setupCryptoService setup the crypto service
+func setupCryptoService() (err error) {
+	algo, err := configService.GetConfig(common.CONFIG_ENCRYPTION_ALGORITHM)
+	if err != nil {
+		return
+	}
+	cryptoService = service.NewCryptoService(algo)
+	return
 }
 
 // setupConfigService setup config service
@@ -68,7 +83,7 @@ func setupConfigService() (err error) {
 }
 
 // setupDb setup the database
-func setupDb() (err error) {
+func setupDb(crypto service.CryptoService) (err error) {
 	kvdbPath, err = configService.GetConfig(common.CONFIG_KVDB_PATH)
 	if err != nil {
 		return
@@ -78,7 +93,7 @@ func setupDb() (err error) {
 	if err != nil {
 		return
 	}
-	noteService = service.NewNoteService(noteRepository, configService, obs)
+	noteService = service.NewNoteService(noteRepository, configService, obs, crypto)
 	return
 }
 
@@ -89,7 +104,7 @@ func main() {
 
 	// create a new ui
 	appUI := ui.NewUI(app.NewWithID("ec-notes"), configService, noteService, obs)
-	mainWindow := ui.NewMainWindow(appUI)
+	mainWindow := ui.NewMainWindow(appUI, cryptoService)
 
 	// add listener to ui service to trigger note list widget update whenever the note title array changes
 	obs.AddListener(observer.EVENT_UPDATE_NOTE_TITLES, mainWindow.UpdateNoteListWidget())
@@ -199,7 +214,7 @@ func setupProviders() (err error) {
 		}
 		// if downloaded notes are not empty, update db with downloaded notes
 		if len(downloadedNotes) > 0 {
-			err = noteService.CreateEncryptedNotes(downloadedNotes)
+			err = noteService.SaveEncryptedNotes(downloadedNotes)
 			if err != nil {
 				return
 			}

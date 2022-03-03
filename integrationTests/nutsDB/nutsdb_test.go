@@ -116,19 +116,20 @@ func (s *nutsDBSuiteTest) TestUpdateDeleteNote() {
 
 func mockConfig() {
 	// make sure we have the encryption key
-	key, err := configService.GetConfig(common.CONFIG_ENCRYPTION_KEY)
+	key, err := configService.GetConfigBytes(common.CONFIG_ENCRYPTION_KEY)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 	// decrypt the key
+
 	decKey, err := cryptoUtil.DecryptMessage(key, "1234")
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 	// add decrypted key to globals so we can use it to encrypt/decrypt notes before storing them
-	configService.SetGlobal(common.CONFIG_ENCRYPTION_KEY, decKey)
+	configService.SetGlobal(common.CONFIG_ENCRYPTION_KEY, string(decKey))
 	kvdbPath, err = configService.GetConfig(common.CONFIG_KVDB_PATH)
 	if err != nil {
 		fmt.Println(err)
@@ -159,7 +160,8 @@ func initDB() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	noteService = service.NewNoteService(noteRepository, configService, observer.NewObserver())
+	cryptoSrv := service.NewCryptoServiceAES(service.NewKeyManagementServiceAES())
+	noteService = service.NewNoteService(noteRepository, configService, observer.NewObserver(), cryptoSrv)
 }
 
 func cleanup() {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"errors"
 	"sync"
 
@@ -14,7 +15,7 @@ import (
 )
 
 var (
-	encKey = "d8fe4aa6f1579d7bf71f43da885947b25892d4015d89a08ce153d38a72567c4d04151525d1c43720bc578e2f2be3b5ba364eb571be6af7240d3929cc6d145a2bb4efb8b2fbd698b05e8962a6c2327ed931d97244aa301663290ee1fefdb4c217f6f4d21e090e228d19dfbecea2f6a69caa9190349c7a4e449e90de79e460220c2e3cc9fb99788d0b4e8a3fe527d1aa5bcb6a8fb791a596e549a5046a157ba6b1414493b8c678512ff2663120225371aabc52ea3b38e947754eeae58e730c8a9655b15152f9a37a22ab66fa3de1de16daeb9be652eb61f66907c0a7cc9f314754d36bea97cf71e97d0eb4d645f314b8e82188c4e7e9dffada184d75183cc4b85b3eec8bc95d36bf6dd3a37d01a3d47c248ec11429a3686d281ac6bb90"
+	enckey = "d8fe4aa6f1579d7bf71f43da885947b25892d4015d89a08ce153d38a72567c4d04151525d1c43720bc578e2f2be3b5ba364eb571be6af7240d3929cc6d145a2bb4efb8b2fbd698b05e8962a6c2327ed931d97244aa301663290ee1fefdb4c217f6f4d21e090e228d19dfbecea2f6a69caa9190349c7a4e449e90de79e460220c2e3cc9fb99788d0b4e8a3fe527d1aa5bcb6a8fb791a596e549a5046a157ba6b1414493b8c678512ff2663120225371aabc52ea3b38e947754eeae58e730c8a9655b15152f9a37a22ab66fa3de1de16daeb9be652eb61f66907c0a7cc9f314754d36bea97cf71e97d0eb4d645f314b8e82188c4e7e9dffada184d75183cc4b85b3eec8bc95d36bf6dd3a37d01a3d47c248ec11429a3686d281ac6bb90"
 	decKey = "HsNARwACWCF22HKtZEALH8YkvfFlOqvGnu1O0RVlJGA97nD5JtkEp0gpV6Pvb19zKdRtKbQ1dS1oVCGBdItpppwaS1za3yA3iidSay0TM1Rzda1tI6xsV3djwJpAKniQNZBej1Zvw6ltAB5v6yOUdRESjEqvLyuP2UUm6dJCdAGwBR2Su1UP9v19n5wmz9g8n8OGzNfAg3S6JX1cK5M7wDcncNUd2UUzNlYU242kS1bPUYT5Lfn4qq9d4LjieAZ6"
 	obs    = observer.NewObserver()
 	testUI *ui.UImpl
@@ -83,9 +84,12 @@ func (nsr *NoteRepositoryMockImpl) GetAllNotes() ([]model.Note, error) {
 	mocks := NewNoteRepositoryMock()
 	nsr.mockedNotes = mocks.mockedNotes
 	// encrypt all notes in nsr.mockedNotes
-	var err error
 	for i, note := range nsr.mockedNotes {
-		nsr.mockedNotes[i].Content, err = cryptoUtil.EncryptMessage(note.Content, decKey)
+		eContent, err := cryptoUtil.EncryptMessage([]byte(note.Content), decKey)
+		if err != nil {
+			return nil, err
+		}
+		nsr.mockedNotes[i].Content = hex.EncodeToString(eContent)
 		if err != nil {
 			return nil, err
 		}
@@ -168,7 +172,7 @@ func main() {
 	// 	fmt.Println(err)
 	// 	os.Exit(1)
 	// }
-	configService.Config[common.CONFIG_ENCRYPTION_KEY] = encKey
+	configService.Config[common.CONFIG_ENCRYPTION_KEY] = enckey
 	noteRepoMocked := NewNoteRepositoryMock()
 
 	noteService := &service.NoteServiceImpl{
@@ -178,7 +182,13 @@ func main() {
 	}
 	// create a new ui
 	testUI = ui.NewUI(app.NewWithID("testAPP"), configService, noteService, obs)
-	mainWindow := ui.NewMainWindow(testUI)
+	// new crypto service
+	kms := service.NewKeyManagementServiceAES()
+	key, _ := hex.DecodeString(decKey)
+	kms.ImportKey(key)
+	cryptoService := service.NewCryptoServiceAES(kms)
+
+	mainWindow := ui.NewMainWindow(testUI, cryptoService)
 
 	// add listeners
 	obs.AddListener(observer.EVENT_UPDATE_NOTE_TITLES, mainWindow.UpdateNoteListWidget())

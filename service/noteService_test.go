@@ -13,13 +13,16 @@ import (
 	toml "github.com/pelletier/go-toml"
 )
 
-var testNote = &model.Note{
-	ID:        1,
-	Title:     "title1",
-	Content:   "test content",
-	CreatedAt: 1643614680013,
-	UpdatedAt: 1643614680013,
-}
+var (
+	testNote = &model.Note{
+		ID:        1,
+		Title:     "title1",
+		Content:   "test content",
+		CreatedAt: 1643614680013,
+		UpdatedAt: 1643614680013,
+	}
+	aesKeyTest = "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456"
+)
 
 // ObserverMockImpl ....
 type ObserverMockImpl struct{}
@@ -168,8 +171,18 @@ func (nsc *noteConfigServiceMockImpl) GetGlobal(key string) (string, error) {
 	return nsc.Globals[key], nil
 }
 
+// GetGlobalBytes ....
+func (nsc *noteConfigServiceMockImpl) GetGlobalBytes(key string) ([]byte, error) {
+	panic("not implemented") // TODO: Implement
+}
+
 // SetGlobal ....
 func (nsc *noteConfigServiceMockImpl) SetGlobal(key string, value string) {
+	panic("not implemented") // TODO: Implement
+}
+
+// GetGlobalBytes ....
+func (nsc *noteConfigServiceMockImpl) SetGlobalBytes(key string, value []byte) {
 	panic("not implemented") // TODO: Implement
 }
 
@@ -178,8 +191,18 @@ func (nsc *noteConfigServiceMockImpl) GetConfig(key string) (string, error) {
 	panic("not implemented") // TODO: Implement
 }
 
+// GetConfigBytes ....
+func (nsc *noteConfigServiceMockImpl) GetConfigBytes(key string) ([]byte, error) {
+	panic("not implemented") // TODO: Implement
+}
+
 // SetConfig ....
 func (nsc *noteConfigServiceMockImpl) SetConfig(key string, value string) error {
+	panic("not implemented") // TODO: Implement
+}
+
+// SetConfigBytes
+func (nsc *noteConfigServiceMockImpl) SetConfigBytes(key string, value []byte) error {
 	panic("not implemented") // TODO: Implement
 }
 
@@ -205,6 +228,7 @@ func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 		Titles        []string
 		NoteRepo      service.NoteServiceRepository
 		ConfigService service.ConfigService
+		Crypto        service.CryptoService
 		Observer      observer.Observer
 	}
 	type args struct {
@@ -222,9 +246,10 @@ func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 				Titles:   []string{},
 				NoteRepo: nil,
 				ConfigService: &noteConfigServiceMockImpl{
-					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: "1234567890"},
+					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: aesKeyTest},
 					Loaded:  true,
 				},
+				Crypto:   service.NewCryptoServiceAES(service.NewKeyManagementServiceAES()),
 				Observer: &ObserverMockImpl{},
 			},
 			args: args{
@@ -240,6 +265,7 @@ func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 				NoteRepo:      tt.fields.NoteRepo,
 				Titles:        tt.fields.Titles,
 				Observer:      tt.fields.Observer,
+				Crypto:        tt.fields.Crypto,
 			}
 			if err := ns.EncryptNote(tt.args.note); (err != nil) != tt.wantErr {
 				t.Errorf("service.NoteServiceImpl.EncryptNote() error = %v, wantErr %v", err, tt.wantErr)
@@ -279,7 +305,7 @@ func TestNoteServiceImpl_SearchNotes(t *testing.T) {
 			fields: fields{
 				NoteRepo: noteRepositoryMock,
 				ConfigService: &noteConfigServiceMockImpl{
-					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: "1234567890"},
+					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: aesKeyTest},
 					Loaded:  true,
 				},
 				Titles:   noteRepositoryMock.mockedTitles,
@@ -299,7 +325,7 @@ func TestNoteServiceImpl_SearchNotes(t *testing.T) {
 			fields: fields{
 				NoteRepo: noteRepositoryMock,
 				ConfigService: &noteConfigServiceMockImpl{
-					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: "1234567890"},
+					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: aesKeyTest},
 					Loaded:  true,
 				},
 				Titles:   noteRepositoryMock.mockedTitles,

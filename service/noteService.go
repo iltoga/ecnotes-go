@@ -1,11 +1,11 @@
 package service
 
 import (
+	"encoding/hex"
 	"errors"
 	"sort"
 
 	"github.com/iltoga/ecnotes-go/lib/common"
-	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
 	"github.com/iltoga/ecnotes-go/model"
 	"github.com/iltoga/ecnotes-go/service/observer"
 	"github.com/lithammer/fuzzysearch/fuzzy"
@@ -18,7 +18,8 @@ type NoteService interface {
 	GetTitles() []string
 	SearchNotes(query string, fuzzySearch bool) ([]string, error)
 	CreateNote(note *model.Note) error
-	CreateEncryptedNotes(notes []model.Note) error
+	SaveEncryptedNotes(notes []model.Note) error
+	ReEncryptNotes(notes []model.Note, algo string, key []byte) error
 	UpdateNoteContent(note *model.Note) error
 
 	UpdateNoteTitle(oldTitle, newTitle string) (noteID int, err error)
@@ -33,6 +34,7 @@ type NoteServiceImpl struct {
 	NoteRepo      NoteServiceRepository
 	ConfigService ConfigService
 	Observer      observer.Observer
+	Crypto        CryptoService
 	// Titles an array with all note Titles in db
 	Titles []string
 }
@@ -42,11 +44,13 @@ func NewNoteService(
 	noteRepo NoteServiceRepository,
 	configService ConfigService,
 	observer observer.Observer,
+	crypto CryptoService,
 ) NoteService {
 	return &NoteServiceImpl{
 		NoteRepo:      noteRepo,
 		ConfigService: configService,
 		Observer:      observer,
+		Crypto:        crypto,
 		Titles:        []string{},
 	}
 }
@@ -141,10 +145,31 @@ func (ns *NoteServiceImpl) searchExact(query string, titles []string) []string {
 
 // CreateEncryptedNotes save to db a batch of (already) encrypted notes
 // TODO: refactor this method to use a batch insert	instead of a loop
-func (ns *NoteServiceImpl) CreateEncryptedNotes(notes []model.Note) error {
+func (ns *NoteServiceImpl) SaveEncryptedNotes(notes []model.Note) error {
 	// loop through the notes and save them to db
 	for _, note := range notes {
 		if err := ns.NoteRepo.CreateNote(&note); err != nil {
+			return err
+		}
+	}
+	// get all note titles from db and notify the observer
+	_, err := ns.GetNotes()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// ReEncryptNotes re-encrypts a batch of notes with a given key and encryption algorithm
+func (ns *NoteServiceImpl) ReEncryptNotes(notes []model.Note, algo string, key []byte) error {
+	// update crypto service with the new key so that from now on it will be used to encrypt/decrypt
+	ns.Crypto = NewCryptoService(algo)
+	if err := ns.Crypto.GetKeyManager().ImportKey(key); err != nil {
+		return err
+	}
+	// re-encrypt all notes with the new encryption key
+	for _, note := range notes {
+		if err := ns.UpdateNoteContent(&note); err != nil {
 			return err
 		}
 	}
@@ -336,16 +361,12 @@ func (ns *NoteServiceImpl) EncryptNote(note *model.Note) error {
 	if note == nil || note.Title == "" || note.Content == "" {
 		return errors.New(common.ERR_NOTE_EMPTY)
 	}
-	// make sure we have the encryption key
-	encryptionKey, err := ns.getEncryptionKey()
+	encryptedContent, err := ns.Crypto.Encrypt([]byte(note.Content))
 	if err != nil {
 		return err
 	}
-	encryptedContent, err := cryptoUtil.EncryptMessage(note.Content, encryptionKey)
-	if err != nil {
-		return err
-	}
-	note.Content = encryptedContent
+	// hex encode the encrypted content
+	note.Content = hex.EncodeToString(encryptedContent)
 	note.Encrypted = true
 	return nil
 }
@@ -356,21 +377,16 @@ func (ns *NoteServiceImpl) DecryptNote(note *model.Note) error {
 	if note == nil || note.Title == "" || note.Content == "" {
 		return errors.New(common.ERR_NOTE_EMPTY)
 	}
-	// make sure we have the encryption key
-	encryptionKey, err := ns.getEncryptionKey()
+	// hex decode the encrypted content
+	encryptedContent, err := hex.DecodeString(note.Content)
 	if err != nil {
 		return err
 	}
-	decryptedContent, err := cryptoUtil.DecryptMessage(note.Content, encryptionKey)
+	decryptedContent, err := ns.Crypto.Decrypt(encryptedContent)
 	if err != nil {
 		return err
 	}
-	note.Content = decryptedContent
+	note.Content = string(decryptedContent)
 	note.Encrypted = false
 	return nil
-}
-
-func (ns *NoteServiceImpl) getEncryptionKey() (string, error) {
-	// encKey is the encryption key in clear text (is the passphrase generated on first run)
-	return ns.ConfigService.GetGlobal(common.CONFIG_ENCRYPTION_KEY)
 }
