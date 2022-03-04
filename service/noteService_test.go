@@ -224,11 +224,13 @@ func (nsc *noteConfigServiceMockImpl) SaveConfig() error {
 
 // TestNoteServiceImpl_EncryptNote ....
 func TestNoteServiceImpl_EncryptNote(t *testing.T) {
+	cryptoSrv := service.NewCryptoServiceAES(service.NewKeyManagementServiceAES())
+	cryptoSrv.GetKeyManager().ImportKey([]byte("1234567890123456"))
 	type fields struct {
 		Titles        []string
 		NoteRepo      service.NoteServiceRepository
 		ConfigService service.ConfigService
-		Crypto        service.CryptoService
+		Crypto        service.CryptoServiceFactory
 		Observer      observer.Observer
 	}
 	type args struct {
@@ -249,7 +251,9 @@ func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: aesKeyTest},
 					Loaded:  true,
 				},
-				Crypto:   service.NewCryptoServiceAES(service.NewKeyManagementServiceAES()),
+				Crypto: &service.CryptoServiceFactoryImpl{
+					Srv: cryptoSrv,
+				},
 				Observer: &ObserverMockImpl{},
 			},
 			args: args{

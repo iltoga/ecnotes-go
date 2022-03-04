@@ -104,3 +104,8 @@ func (cs *CryptoServiceAES) Verify(plaintext, signature []byte) error {
 func (cs *CryptoServiceAES) GetKeyManager() KeyManagementService {
 	return cs.keyManagementService
 }
+
+// GetAlgorithm get the algorithm name
+func (cs *CryptoServiceAES) GetAlgorithm() string {
+	return common.ENCRYPTION_ALGORITHM_AES_256_CBC
+}

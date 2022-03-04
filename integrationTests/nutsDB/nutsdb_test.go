@@ -160,8 +160,11 @@ func initDB() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	cryptoSrv := service.NewCryptoServiceAES(service.NewKeyManagementServiceAES())
-	noteService = service.NewNoteService(noteRepository, configService, observer.NewObserver(), cryptoSrv)
+	cryptoSrvF := &service.CryptoServiceFactoryImpl{
+		Srv: service.NewCryptoServiceAES(service.NewKeyManagementServiceAES()),
+	}
+	cryptoSrvF.Srv.GetKeyManager().ImportKey([]byte("1234"))
+	noteService = service.NewNoteService(noteRepository, configService, observer.NewObserver(), cryptoSrvF)
 }
 
 func cleanup() {

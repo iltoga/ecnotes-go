@@ -29,12 +29,12 @@ type MainWindowImpl struct {
 	titlesDataBinding binding.ExternalStringList
 	selectedNote      *model.Note
 	w                 fyne.Window
-	cryptoService     service.CryptoService
+	cryptoService     service.CryptoServiceFactory
 }
 
 func NewMainWindow(
 	ui *UImpl,
-	cryptoService service.CryptoService) MainWindow {
+	cryptoService service.CryptoServiceFactory) MainWindow {
 	return &MainWindowImpl{
 		UImpl:         *ui,
 		cryptoService: cryptoService,
@@ -412,9 +412,9 @@ func (ui *MainWindowImpl) createPasswordDialog(keyAction common.EncryptionKeyAct
 	case common.EncryptionKeyAction_Generate:
 		dgTitle = "Generate Encryption Key"
 		onConfirm := func(algo string, pwd string) {
-			ui.cryptoService = service.NewCryptoService(algo)
+			ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(algo))
 			// generate encryption key
-			decryptedKey, err := ui.cryptoService.GetKeyManager().GenerateKey()
+			decryptedKey, err := ui.cryptoService.GetSrv().GetKeyManager().GenerateKey()
 			if err != nil {
 				doReturn(keyAction, ch, err, algo, nil)
 				return
@@ -502,16 +502,16 @@ func (ui *MainWindowImpl) createPasswordDialog(keyAction common.EncryptionKeyAct
 				doReturn(keyAction, ch, err, algo, decryptedKey)
 				return
 			}
-			ui.cryptoService = service.NewCryptoService(algo)
+			ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(algo))
 			// import decrypted key to crypto service to validate it
-			if err = ui.cryptoService.GetKeyManager().ImportKey(decryptedKey); err != nil {
+			if err = ui.cryptoService.GetSrv().GetKeyManager().ImportKey(decryptedKey); err != nil {
 				err = fmt.Errorf("error importing key: %s", err.Error())
 				doReturn(keyAction, ch, err, algo, decryptedKey)
 				return
 			}
 			// TODO: this is probably no necessary as the key is already imported and we can use the one above
 			// get the key from crypto service
-			if decryptedKey, err = ui.cryptoService.GetKeyManager().GetPrivateKey(); err != nil {
+			if decryptedKey, err = ui.cryptoService.GetSrv().GetKeyManager().GetPrivateKey(); err != nil {
 				doReturn(keyAction, ch, err, algo, decryptedKey)
 				return
 			}

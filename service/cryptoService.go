@@ -14,6 +14,8 @@ type CryptoService interface {
 	Verify(plaintext, signature []byte) error
 	// GetKeyManager get the key management service
 	GetKeyManager() KeyManagementService
+	// GetAlgorithm get the algorithm
+	GetAlgorithm() string
 }
 
 // KeyManagementService interface for key management service implementation (key generation, etc)
@@ -28,8 +30,8 @@ type KeyManagementService interface {
 	ImportKey(key []byte) error
 }
 
-// NewCrytpService create a new crypto service bases on the given key management service and algorithm
-func NewCryptoService(algorithm string) CryptoService {
+// NewCrytpServiceFactory create a new crypto service bases on the given key management service and algorithm and inject it into the CryptoServiceImpl
+func NewCryptoServiceFactory(algorithm string) CryptoService {
 	switch algorithm {
 	case common.ENCRYPTION_ALGORITHM_AES_256_CBC:
 		kms := NewKeyManagementServiceAES()
@@ -40,4 +42,23 @@ func NewCryptoService(algorithm string) CryptoService {
 	default:
 		return nil
 	}
+}
+
+// to store the crypto service and allow to switch between crypto services
+
+type CryptoServiceFactory interface {
+	GetSrv() CryptoService
+	SetSrv(srv CryptoService)
+}
+
+type CryptoServiceFactoryImpl struct {
+	Srv CryptoService
+}
+
+func (c *CryptoServiceFactoryImpl) GetSrv() CryptoService {
+	return c.Srv
+}
+
+func (c *CryptoServiceFactoryImpl) SetSrv(srv CryptoService) {
+	c.Srv = srv
 }

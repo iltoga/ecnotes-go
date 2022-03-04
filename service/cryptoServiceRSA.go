@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 
+	"github.com/iltoga/ecnotes-go/lib/common"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -174,4 +175,9 @@ func (cs *CryptoServiceRSAImpl) Verify(plaintext, signature []byte) error {
 // GetKeyManagementService get the key management service
 func (cs *CryptoServiceRSAImpl) GetKeyManager() KeyManagementService {
 	return cs.keyManagementService
+}
+
+// GetAlgorithm get the algorithm
+func (cs *CryptoServiceRSAImpl) GetAlgorithm() string {
+	return common.ENCRYPTION_ALGORITHM_RSA_OAEP
 }

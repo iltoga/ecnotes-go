@@ -186,9 +186,11 @@ func main() {
 	kms := service.NewKeyManagementServiceAES()
 	key, _ := hex.DecodeString(decKey)
 	kms.ImportKey(key)
-	cryptoService := service.NewCryptoServiceAES(kms)
+	cryptoServiceF := &service.CryptoServiceFactoryImpl{
+		Srv: service.NewCryptoServiceAES(kms),
+	}
 
-	mainWindow := ui.NewMainWindow(testUI, cryptoService)
+	mainWindow := ui.NewMainWindow(testUI, cryptoServiceF)
 
 	// add listeners
 	obs.AddListener(observer.EVENT_UPDATE_NOTE_TITLES, mainWindow.UpdateNoteListWidget())

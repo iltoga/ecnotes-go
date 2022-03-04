@@ -34,7 +34,7 @@ type NoteServiceImpl struct {
 	NoteRepo      NoteServiceRepository
 	ConfigService ConfigService
 	Observer      observer.Observer
-	Crypto        CryptoService
+	Crypto        CryptoServiceFactory
 	// Titles an array with all note Titles in db
 	Titles []string
 }
@@ -44,7 +44,7 @@ func NewNoteService(
 	noteRepo NoteServiceRepository,
 	configService ConfigService,
 	observer observer.Observer,
-	crypto CryptoService,
+	crypto CryptoServiceFactory,
 ) NoteService {
 	return &NoteServiceImpl{
 		NoteRepo:      noteRepo,
@@ -163,8 +163,8 @@ func (ns *NoteServiceImpl) SaveEncryptedNotes(notes []model.Note) error {
 // ReEncryptNotes re-encrypts a batch of notes with a given key and encryption algorithm
 func (ns *NoteServiceImpl) ReEncryptNotes(notes []model.Note, algo string, key []byte) error {
 	// update crypto service with the new key so that from now on it will be used to encrypt/decrypt
-	ns.Crypto = NewCryptoService(algo)
-	if err := ns.Crypto.GetKeyManager().ImportKey(key); err != nil {
+	ns.Crypto.SetSrv(NewCryptoServiceFactory(algo))
+	if err := ns.Crypto.GetSrv().GetKeyManager().ImportKey(key); err != nil {
 		return err
 	}
 	// re-encrypt all notes with the new encryption key
@@ -361,7 +361,7 @@ func (ns *NoteServiceImpl) EncryptNote(note *model.Note) error {
 	if note == nil || note.Title == "" || note.Content == "" {
 		return errors.New(common.ERR_NOTE_EMPTY)
 	}
-	encryptedContent, err := ns.Crypto.Encrypt([]byte(note.Content))
+	encryptedContent, err := ns.Crypto.GetSrv().Encrypt([]byte(note.Content))
 	if err != nil {
 		return err
 	}
@@ -382,7 +382,7 @@ func (ns *NoteServiceImpl) DecryptNote(note *model.Note) error {
 	if err != nil {
 		return err
 	}
-	decryptedContent, err := ns.Crypto.Decrypt(encryptedContent)
+	decryptedContent, err := ns.Crypto.GetSrv().Decrypt(encryptedContent)
 	if err != nil {
 		return err
 	}

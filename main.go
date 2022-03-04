@@ -27,7 +27,7 @@ var (
 	defaultBucket  = "notes"
 	logger         *log.Logger
 	quitSignalChan chan os.Signal
-	cryptoService  service.CryptoService
+	cryptoService  service.CryptoServiceFactory
 )
 
 func init() {
@@ -45,9 +45,9 @@ func init() {
 		os.Exit(1)
 	}
 
-	// if err = setupCryptoService(); err != nil {
-	// 	logger.Fatal(err)
-	// }
+	if err = setupCryptoService(); err != nil {
+		logger.Fatal(err)
+	}
 
 	// setup db connection
 	if err = setupDb(cryptoService); err != nil {
@@ -60,13 +60,9 @@ func init() {
 	}
 }
 
-// setupCryptoService setup the crypto service
+// setupCryptoService setup an empty crypto service
 func setupCryptoService() (err error) {
-	algo, err := configService.GetConfig(common.CONFIG_ENCRYPTION_ALGORITHM)
-	if err != nil {
-		return
-	}
-	cryptoService = service.NewCryptoService(algo)
+	cryptoService = &service.CryptoServiceFactoryImpl{}
 	return
 }
 
@@ -83,7 +79,7 @@ func setupConfigService() (err error) {
 }
 
 // setupDb setup the database
-func setupDb(crypto service.CryptoService) (err error) {
+func setupDb(crypto service.CryptoServiceFactory) (err error) {
 	kvdbPath, err = configService.GetConfig(common.CONFIG_KVDB_PATH)
 	if err != nil {
 		return
