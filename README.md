@@ -1,5 +1,9 @@
-# EcNotes (encrypted notes)
+
+# EcNotes (encrypted notes) 
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
+<img src="https://github.com/iltoga/ecnotes-go/blob/main/Icon.png" width="50" height="50">
 
 Multi-platform gui app to store and manage encrypted notes. It can be used to store sensitive information such as passwords and crypto keys
 
@@ -12,6 +16,42 @@ Through the years I've always been struggling to find a simple tool to store my 
 - must give me the ownership of my data: I want to be able to generate my own encryption key/s locally, save them where I want and storing or syncing with cloud services only encrypted content. meaning, the only time where my data are in clear text is inside the application and only for the piece of data I am actually accessing (single note)
 - would be nice if it allows to choose between different encryption algorithms
 - would be nice if it allows to manage external (public) keys: this would allow to exchange encrypted notes/messages with other people (you know.. real e2e encryption, without having to trust third parties ;) )
+
+### INSTALLATION
+At the moment the only way to install EcNotes is to compile it (maybe in future I will provide executables for different platforms..).
+You will have to first install these dependencies:
+- go (tested on versions >= 1.17)
+- git
+- fyne commandline utility: instructions [here](https://developer.fyne.io/started/packaging)
+
+#### PACKAGE ECNOTES (DISTRIBUTABLE)
+To package EcNotes (build the executable and installer package), go to the gooroot folder $GOROOT/src/github (usually ~/go/src/github) and create github dir if not present:
+```
+git clone git@github.com:iltoga/ecnotes-go.git
+cd ecnotes-go
+
+# native (for your running OS/platform):
+fyne package -icon Icon.png
+
+# other os (read instructions on https://developer.fyne.io/started/packaging to install relative OS toolchains), eg:
+
+fyne package -os linux -icon Icon.png
+fyne package -os windows -icon Icon.png
+```
+Then you should be able to install the app with your OS packaging system.
+
+#### JUST BUILD AND INSTALL LOCALLY
+Go to the gooroot folder $GOROOT/src/github (usually ~/go/src/github) and create github dir if not present:
+```
+git clone git@github.com:iltoga/ecnotes-go.git
+cd ecnotes-go
+
+fyne install -icon Icon.png
+```
+
+\* alternatively you can just use ```go run .```  or ``` go build .``` to run or build the executable, without installing it into some other directory
+
+
 
 ### EXTERNAL PROVIDERS
 You can use these providers to extend functionalities of EcNotes:
