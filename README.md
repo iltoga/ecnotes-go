@@ -101,5 +101,8 @@ Last but not least is to get your google sheet ID and add it to EcNotes configur
 ### CONTRIBUTE
 	
 If you like this project and feel that something is missing, broken or can be improved, consider to contribute by joining it!
+There are two branches at the moment: 
+- main: master (stable) branch
+- dev: development (potentially unstable) branch
 
-Please follow these guide on how to contribute on GitHub: https://www.dataschool.io/how-to-contribute-on-github/
+Please follow this guide on how to contribute on GitHub: https://www.dataschool.io/how-to-contribute-on-github/ and fork from dev branch to create a PR
