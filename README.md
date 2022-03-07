@@ -7,15 +7,17 @@
 
 Multi-platform gui app to store and manage encrypted notes. It can be used to store sensitive information such as passwords and crypto keys
 
-EcNotes starts as a hobby project to get away some 'rust' from my golang programming and develop something useful (at least for me).
-Through the years I've always been struggling to find a simple tool to store my passwords and other sensitive information and that meets the following requirements:
+EcNotes starts as a hobby project to get away some 'rust' from my golang programming while developing something useful.
+Through the years I've always been struggling to find a simple tool to store my passwords and other sensitive information that meets the following requirements:
 
-- must be multiplatform: must run on desktop and mobile as well
-- must be locally installed as a GUI application: I don't want to rely on some third party-internet software
+- must be multiplatform: run on desktop and mobile as well
+- must be locally installed as a standalone GUI application: I don't want to rely on some third party-internet software or browser extension
 - must be able to sync **encrypted** data to some cloud storage/db services as an optional feature: this is required if I want to use the app on different systems/devices and retain all my data
 - must give me the ownership of my data: I want to be able to generate my own encryption key/s locally, save them where I want and storing or syncing with cloud services only encrypted content. meaning, the only time where my data are in clear text is inside the application and only for the piece of data I am actually accessing (single note)
 - would be nice if it allows to choose between different encryption algorithms
-- would be nice if it allows to manage external (public) keys: this would allow to exchange encrypted notes/messages with other people (you know.. real e2e encryption, without having to trust third parties ;) )
+- would be nice if it allows to manage external (public) keys or generate 'shared keys'\**: this would allow to exchange encrypted notes/messages with other people by using e2e encryption, without having to trust third parties. 
+
+\** For shared keys we could use elliptic-curve encryption to generate a shared secret, to be used as seed for a new AES key, for instance, by using [ECDH key exchange](https://cryptobook.nakov.com/asymmetric-key-ciphers/ecdh-key-exchange)
 
 ### INSTALLATION
 At the moment the only way to install EcNotes is to compile it (maybe in future I will provide executables for different platforms..).
@@ -86,7 +88,7 @@ Once you have set up your Google account and created and shared your google shee
 If you have followed the article and created the google account service, you've been asked to download the json file with the credentials to your computer. 
 Now run EcNotes at least once, so that creates the configuration directories and copy or move this file to your home directory (on linux 'echo #HOME' from a terminal to see where it is). Eg: 
 `mv whatever_credentials.json #HOME/.config/ecnotes/providers/google/cred_serviceaccount.json`
-<i>Please note that the file name (`cred_serviceaccount.json`) is important.<\i>
+<i>Please note that the file name (`cred_serviceaccount.json`) is important.</i>
 
 Last but not least is to get your google sheet ID and add it to EcNotes configuration:
 - copy the id from the sheet url (it looks something like this `1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms`)
@@ -95,3 +97,9 @@ Last but not least is to get your google sheet ID and add it to EcNotes configur
 	google_sheet_id = "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
 	```
 	don't forget to change the id with yours
+	
+### CONTRIBUTE
+	
+If you like this project and feel that something is missing, broken or can be improved, consider to contribute by joining it!
+
+Please follow these guide on how to contribute on GitHub: https://www.dataschool.io/how-to-contribute-on-github/
