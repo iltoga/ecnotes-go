@@ -63,13 +63,19 @@ func (c *ConfigServiceImpl) setDefaultConfig() {
 	if _, ok := c.Config[common.CONFIG_LOG_FILE_PATH]; !ok {
 		c.Config[common.CONFIG_LOG_FILE_PATH] = filepath.Join(c.ResourcePath, common.DEFAULT_LOG_FILE_PATH)
 	}
+	// set default config for key_file_path
+	if _, ok := c.Config[common.CONFIG_KEY_FILE_PATH]; !ok {
+		c.Config[common.CONFIG_KEY_FILE_PATH] = filepath.Join(c.ResourcePath, common.DEFAULT_KEY_FILE_PATH)
+	}
 	if _, ok := c.Config[common.CONFIG_LOG_LEVEL]; !ok {
 		c.Config[common.CONFIG_LOG_LEVEL] = common.DEFAULT_LOG_LEVEL
 	}
-	// set default config for encryption algorithm
-	if _, ok := c.Config[common.CONFIG_ENCRYPTION_ALGORITHM]; !ok {
-		c.Config[common.CONFIG_ENCRYPTION_ALGORITHM] = common.DEFAULT_ENCRYPTION_ALGORITHM
-	}
+	// STEF delete this
+	// // set default config for encryption algorithm
+	// if _, ok := c.Config[common.CONFIG_ENCRYPTION_ALGORITHM]; !ok {
+	// 	c.Config[common.CONFIG_ENCRYPTION_ALGORITHM] = common.DEFAULT_ENCRYPTION_ALGORITHM
+	// }
+
 	// set default config for google credentials file path (defaults to user home directory .config/ecnotes)
 	// note: the directory will be automatically created, but you must manually copy the file inside it
 	// in order to use google sheets service (see google-sheets-service.go)

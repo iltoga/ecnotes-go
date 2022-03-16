@@ -18,4 +18,5 @@ const (
 	ERR_INVALID_KEY_LENGTH                    = "invalid key length"
 	ERR_SYMMETRIC_KEY_SIGNING_NOT_IMPLEMENTED = "symmetric key signing not implemented"
 	ERR_INVALID_HEX_STRING                    = "invalid hex string"
+	ERR_CERT_NOT_FOUND                        = "certificate not found"
 )

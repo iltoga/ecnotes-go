@@ -35,7 +35,8 @@ type UImpl struct {
 	winMux      *sync.Mutex
 	widgets     map[string]fyne.CanvasObject
 	widMux      *sync.Mutex
-	confSrv     service.ConfigService
+	confService service.ConfigService
+	certService service.CertService
 	noteService service.NoteService
 	obs         observer.Observer
 }
@@ -43,8 +44,9 @@ type UImpl struct {
 // NewUI UI constructor
 func NewUI(
 	app fyne.App,
-	confSrv service.ConfigService,
+	confService service.ConfigService,
 	noteService service.NoteService,
+	certService service.CertService,
 	obs observer.Observer,
 ) *UImpl {
 	return &UImpl{
@@ -53,8 +55,9 @@ func NewUI(
 		widgets:     make(map[string]fyne.CanvasObject),
 		winMux:      &sync.Mutex{},
 		widMux:      &sync.Mutex{},
-		confSrv:     confSrv,
+		confService: confService,
 		noteService: noteService,
+		certService: certService,
 		obs:         obs,
 	}
 }

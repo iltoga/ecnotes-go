@@ -28,6 +28,7 @@ var (
 	logger         *log.Logger
 	quitSignalChan chan os.Signal
 	cryptoService  service.CryptoServiceFactory
+	certService    service.CertService
 )
 
 func init() {
@@ -36,6 +37,12 @@ func init() {
 	// setup config service and load config
 	if err = setupConfigService(); err != nil {
 		fmt.Println("Error loading config:", err)
+		os.Exit(1)
+	}
+
+	// load certificates to encrypt/decrypt messages
+	if err = setupCerts(); err != nil {
+		fmt.Println("Error loading certificates:", err)
 		os.Exit(1)
 	}
 
@@ -78,6 +85,17 @@ func setupConfigService() (err error) {
 	return
 }
 
+// loadKeys loads the keys from the key_store.json file
+func setupCerts() (err error) {
+	// get the key store path from the config
+	keyFilePath, err := configService.GetConfig(common.CONFIG_KEY_FILE_PATH)
+	if err != nil {
+		return
+	}
+	certService = service.NewCertService(keyFilePath)
+	return
+}
+
 // setupDb setup the database
 func setupDb(crypto service.CryptoServiceFactory) (err error) {
 	kvdbPath, err = configService.GetConfig(common.CONFIG_KVDB_PATH)
@@ -99,7 +117,7 @@ func main() {
 	setupCloseHandler(quitSignalChan)
 
 	// create a new ui
-	appUI := ui.NewUI(app.NewWithID("ec-notes"), configService, noteService, obs)
+	appUI := ui.NewUI(app.NewWithID("ec-notes"), configService, noteService, certService, obs)
 	mainWindow := ui.NewMainWindow(appUI, cryptoService)
 
 	// add listener to ui service to trigger note list widget update whenever the note title array changes
@@ -158,12 +176,12 @@ func setupLogger() (err error) {
 	// note that logPath is the file name, not the directory
 	logDir := filepath.Dir(logPath)
 	if _, err = os.Stat(logDir); os.IsNotExist(err) {
-		err = os.MkdirAll(logDir, 0755)
+		err = os.MkdirAll(logDir, 0o755)
 		if err != nil {
 			return
 		}
 	}
-	logFile, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	logFile, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
 	if err != nil {
 		return
 	}
