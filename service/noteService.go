@@ -19,7 +19,7 @@ type NoteService interface {
 	SearchNotes(query string, fuzzySearch bool) ([]string, error)
 	CreateNote(note *model.Note) error
 	SaveEncryptedNotes(notes []model.Note) error
-	ReEncryptNotes(notes []model.Note, algo string, key []byte) error
+	ReEncryptNotes(notes []model.Note, cert model.EncKey) error
 	UpdateNoteContent(note *model.Note) error
 
 	UpdateNoteTitle(oldTitle, newTitle string) (noteID int, err error)
@@ -161,10 +161,10 @@ func (ns *NoteServiceImpl) SaveEncryptedNotes(notes []model.Note) error {
 }
 
 // ReEncryptNotes re-encrypts a batch of notes with a given key and encryption algorithm
-func (ns *NoteServiceImpl) ReEncryptNotes(notes []model.Note, algo string, key []byte) error {
+func (ns *NoteServiceImpl) ReEncryptNotes(notes []model.Note, cert model.EncKey) error {
 	// update crypto service with the new key so that from now on it will be used to encrypt/decrypt
-	ns.Crypto.SetSrv(NewCryptoServiceFactory(algo))
-	if err := ns.Crypto.GetSrv().GetKeyManager().ImportKey(key); err != nil {
+	ns.Crypto.SetSrv(NewCryptoServiceFactory(cert.Algo))
+	if err := ns.Crypto.GetSrv().GetKeyManager().ImportKey(cert.Key, cert.Name); err != nil {
 		return err
 	}
 	// re-encrypt all notes with the new encryption key
@@ -361,6 +361,7 @@ func (ns *NoteServiceImpl) EncryptNote(note *model.Note) error {
 	if note == nil || note.Title == "" || note.Content == "" {
 		return errors.New(common.ERR_NOTE_EMPTY)
 	}
+	note.EncKey = ns.Crypto.GetSrv().GetAlgorithm()
 	encryptedContent, err := ns.Crypto.GetSrv().Encrypt([]byte(note.Content))
 	if err != nil {
 		return err

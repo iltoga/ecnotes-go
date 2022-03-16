@@ -244,7 +244,7 @@ func main() {
 	// new crypto service
 	kms := service.NewKeyManagementServiceAES()
 	key, _ := hex.DecodeString(decKey)
-	kms.ImportKey(key)
+	kms.ImportKey(key, "testKey1")
 	cryptoServiceF := &service.CryptoServiceFactoryImpl{
 		Srv: service.NewCryptoServiceAES(kms),
 	}

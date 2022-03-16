@@ -278,7 +278,7 @@ func (nsc *noteConfigServiceMockImpl) SaveConfig() error {
 // TestNoteServiceImpl_EncryptNote ....
 func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 	cryptoSrv := service.NewCryptoServiceAES(service.NewKeyManagementServiceAES())
-	cryptoSrv.GetKeyManager().ImportKey([]byte("1234567890123456"))
+	cryptoSrv.GetKeyManager().ImportKey([]byte("1234567890123456"), "testKey1")
 	type fields struct {
 		Titles        []string
 		NoteRepo      service.NoteServiceRepository

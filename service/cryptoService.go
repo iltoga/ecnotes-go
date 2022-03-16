@@ -27,7 +27,7 @@ type KeyManagementService interface {
 	// GetPrivateKey get the private key
 	GetPrivateKey() ([]byte, error)
 	// ImportKey import a key into the key management service
-	ImportKey(key []byte) error
+	ImportKey(key []byte, keyName string) error
 }
 
 // NewCrytpServiceFactory create a new crypto service bases on the given key management service and algorithm and inject it into the CryptoServiceImpl

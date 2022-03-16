@@ -188,7 +188,7 @@ func initDB() {
 	cryptoSrvF := &service.CryptoServiceFactoryImpl{
 		Srv: service.NewCryptoServiceFactory(cert.Algo),
 	}
-	cryptoSrvF.Srv.GetKeyManager().ImportKey(cert.Key)
+	cryptoSrvF.Srv.GetKeyManager().ImportKey(cert.Key, cert.Name)
 	noteService = service.NewNoteService(noteRepository, configService, observer.NewObserver(), cryptoSrvF)
 }
 

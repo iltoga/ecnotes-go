@@ -9,9 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var (
-	aesKey = "shhhhhhhhhhhhhItsaSecret"
-)
+var aesKey = "shhhhhhhhhhhhhItsaSecret"
 
 // mock service.KeyManagementService implementation
 type mockAESKeyManagementService struct {
@@ -39,7 +37,7 @@ func (m *mockAESKeyManagementService) GetPrivateKey() ([]byte, error) {
 }
 
 // ImportKey
-func (m *mockAESKeyManagementService) ImportKey(key []byte) error {
+func (m *mockAESKeyManagementService) ImportKey(key []byte, keyName string) error {
 	m.aesKey = key
 	return nil
 }
@@ -82,6 +80,7 @@ func TestSignAES(t *testing.T) {
 	// sign a string
 	testStringB := []byte("test string")
 	signature, err := signatureService.Sign(testStringB)
+	// assert.Equal(t, common.ERR_SYMMETRIC_KEY_SIGNING_NOT_IMPLEMENTED, err.Error())
 	assert.Equal(t, common.ERR_SYMMETRIC_KEY_SIGNING_NOT_IMPLEMENTED, err.Error())
 
 	// verify the signature

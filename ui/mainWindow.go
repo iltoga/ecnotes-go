@@ -259,7 +259,7 @@ func (ui *MainWindowImpl) createMainWindowMenu() *fyne.MainMenu {
 					return
 				}
 				// re-encrypt all notes with the new encryption key
-				if err := ui.noteService.ReEncryptNotes(notes, encAlgo, key); err != nil {
+				if err := ui.noteService.ReEncryptNotes(notes, cert); err != nil {
 					ui.ShowNotification("Error", "Error re-encrypting notes: "+err.Error())
 					return
 				}
@@ -529,29 +529,13 @@ func (ui *MainWindowImpl) createPasswordDialog(keyAction common.EncryptionKeyAct
 				return
 			}
 			// get algo from config file
-			algo := cert.Algo
-			decryptedKey := cert.Key
-			ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(algo))
+			ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(cert.Algo))
 			// import decrypted key to crypto service to validate it
-			if err = ui.cryptoService.GetSrv().GetKeyManager().ImportKey(decryptedKey); err != nil {
+			if err = ui.cryptoService.GetSrv().GetKeyManager().ImportKey(cert.Key, cert.Name); err != nil {
 				err = fmt.Errorf("error importing key: %s", err.Error())
 				doReturn(keyAction, ch, err)
 				return
 			}
-			// TODO: STEF delete this!
-			// // TODO: this is probably no necessary as the key is already imported and we can use the one above
-			// // get the key from crypto service
-			// if decryptedKey, err = ui.cryptoService.GetSrv().GetKeyManager().GetPrivateKey(); err != nil {
-			// 	doReturn(keyAction, ch, err, algo, decryptedKey)
-			// 	return
-			// }
-			// // save decrypted encryption key to config file
-			// ui.confService.SetGlobalBytes(common.CONFIG_ENCRYPTION_KEY, decryptedKey)
-			// if err = ui.confService.SaveConfig(); err != nil {
-			// 	err = fmt.Errorf("error saving configuration: %s", err.Error())
-			// 	doReturn(keyAction, ch, err, algo, decryptedKey)
-			// 	return
-			// }
 			doReturn(keyAction, ch, err)
 		}
 		keyPasswordWdg := widget.NewPasswordEntry()
