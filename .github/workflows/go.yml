@@ -11,12 +11,18 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - name: Checkout repository code
+      uses: actions/checkout@v2
 
     - name: Set up Go
       uses: actions/setup-go@v2
       with:
-        go-version: 1.17
+        go-version: 1.18
+        
+    - name: Install jq tool
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libx11-dev mesa-common-dev libxi-dev libxext-dev
 
     - name: Build
       run: go build -v ./...
