@@ -21,7 +21,7 @@ jobs:
         
     - name: Install xorg dev (for fyne)
       run: |
-        sudo apt-get install -y xorg-dev
+        sudo apt-get install -y xorg-dev --fix-missing
 
     - name: Build
       run: go build -v ./...
