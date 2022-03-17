@@ -176,12 +176,12 @@ func setupLogger() (err error) {
 	// note that logPath is the file name, not the directory
 	logDir := filepath.Dir(logPath)
 	if _, err = os.Stat(logDir); os.IsNotExist(err) {
-		err = os.MkdirAll(logDir, 0o755)
+		err = os.MkdirAll(logDir, 0755)
 		if err != nil {
 			return
 		}
 	}
-	logFile, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
+	logFile, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		return
 	}

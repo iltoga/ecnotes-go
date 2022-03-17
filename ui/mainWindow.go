@@ -28,6 +28,7 @@ type MainWindowImpl struct {
 	WindowDefaultOptions
 	titlesDataBinding binding.ExternalStringList
 	selectedNote      *model.Note
+	selectedNoteID    int
 	w                 fyne.Window
 	cryptoService     service.CryptoServiceFactory
 }
@@ -101,9 +102,9 @@ func (ui *MainWindowImpl) createWindowContainer() *fyne.Container {
 		}
 	})
 	deleteNoteBtn := widget.NewButton("Delete", func() {
-		if ui.selectedNote != nil {
+		if ui.selectedNoteID != 0 {
 			// delete note from db
-			err := ui.noteService.DeleteNote(ui.selectedNote.ID)
+			err := ui.noteService.DeleteNote(ui.selectedNoteID)
 			if err != nil {
 				ui.ShowNotification("Error deleting note", err.Error())
 				return
@@ -369,10 +370,14 @@ func (ui *MainWindowImpl) createNoteList(titles []string) fyne.CanvasObject {
 	noteList.OnSelected = func(lii widget.ListItemID) {
 		var err error
 		// get note from db
-		noteID := ui.noteService.GetNoteIDFromTitle(titles[lii])
-		ui.selectedNote, err = ui.noteService.GetNoteWithContent(noteID)
+		ui.selectedNoteID = ui.noteService.GetNoteIDFromTitle(titles[lii])
+		ui.selectedNote, err = ui.noteService.GetNoteWithContent(ui.selectedNoteID)
 		if err != nil {
-			ui.ShowNotification("Error Loading note from db", err.Error())
+			if err.Error() == "cipher: message authentication failed" {
+				ui.ShowNotification("", common.ERR_CANNOT_DECRYPT_MISSING_KEY)
+			} else {
+				ui.ShowNotification("", "Error getting note: "+err.Error())
+			}
 			return
 		}
 		ui.GetObserver().Notify(
