@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/iltoga/ecnotes-go/lib/common"
+	"github.com/iltoga/ecnotes-go/model"
 	"github.com/iltoga/ecnotes-go/service"
 	"github.com/stretchr/testify/assert"
 )
@@ -23,6 +25,15 @@ type mockKeyManagementService struct {
 // NewMockKeyManagementService returns a new mock service.KeyManagementService implementation
 func NewMockKeyManagementService(priKey, pubKey []byte) service.KeyManagementService {
 	return &mockKeyManagementService{priKey, pubKey}
+}
+
+func (m *mockKeyManagementService) GetCertificate() model.EncKey {
+	priKey, _ := hex.DecodeString(priKeyHex)
+	return model.EncKey{
+		Key:  priKey,
+		Name: "testKey1",
+		Algo: common.ENCRYPTION_ALGORITHM_RSA_OAEP,
+	}
 }
 
 // GenerateKey generates a new mocked key

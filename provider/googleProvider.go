@@ -241,7 +241,7 @@ func (gp *GoogleProvider) PutNote(note *model.Note) error {
 	// create/update a new row in the sheet
 	writeRange := fmt.Sprintf("%s!A%d:H%d", gp.sheetName, noteIDx, noteIDx)
 	values := [][]interface{}{
-		{note.ID, note.Title, note.Content, note.Hidden, note.Encrypted, note.EncKey, note.CreatedAt, note.UpdatedAt},
+		{note.ID, note.Title, note.Content, note.Hidden, note.Encrypted, note.EncKeyName, note.CreatedAt, note.UpdatedAt},
 	}
 	_, err := gp.sheetsService.Spreadsheets.Values.Update(gp.sheetID, writeRange, &sheets.ValueRange{
 		Values: values,
@@ -403,14 +403,14 @@ func getClientWithJWTToken(ctx context.Context, credFilePath string) (*http.Clie
 // ParseSheetRow maps the sheet row to a Note object
 func (*GoogleProvider) ParseSheetRow(row []interface{}) model.Note {
 	note := model.Note{
-		ID:        common.StringToInt(row[0].(string)),
-		Title:     row[1].(string),
-		Content:   row[2].(string),
-		Hidden:    common.StringToBool(row[3].(string)),
-		Encrypted: common.StringToBool(row[4].(string)),
-		EncKey:    row[5].(string),
-		CreatedAt: common.StringToInt64(row[6].(string)),
-		UpdatedAt: common.StringToInt64(row[7].(string)),
+		ID:         common.StringToInt(row[0].(string)),
+		Title:      row[1].(string),
+		Content:    row[2].(string),
+		Hidden:     common.StringToBool(row[3].(string)),
+		Encrypted:  common.StringToBool(row[4].(string)),
+		EncKeyName: row[5].(string),
+		CreatedAt:  common.StringToInt64(row[6].(string)),
+		UpdatedAt:  common.StringToInt64(row[7].(string)),
 	}
 	return note
 }
