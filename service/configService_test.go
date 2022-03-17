@@ -18,7 +18,7 @@ type ConfigServiceTestSuite struct {
 	suite
 }
 
-func (s *ConfigServiceTestSuite) TestParseConfigTree(t *testing.T) {
+func (s *ConfigServiceTestSuite) TestParseConfigTree(t *assert.TestingT) {
 	config, _ := toml.Load(`
 crt_file = "./main.crt"
 key_file = "./main.key"
@@ -28,9 +28,9 @@ key_file = "./main.key"
 	s.configService, _ = service.NewConfigService()
 	s.configService.ParseConfigTree(config)
 	fileCrt, _ := s.configService.GetConfig("crt_file")
-	assert.Equal(t, "./main.crt", fileCrt)
+	assert.Equal(*t, "./main.crt", fileCrt)
 	fileKey, _ := s.configService.GetConfig("key_file")
-	assert.Equal(t, "./main.key", fileKey)
+	assert.Equal(*t, "./main.key", fileKey)
 }
 
 func (s *ConfigServiceTestSuite) TestConfigServiceImpl_GetConfig(t *testing.T) {

@@ -9,7 +9,8 @@ import (
 
 // KeyManagementServiceAES interface for key management service implementation (key generation, etc)
 type KeyManagementServiceAES struct {
-	key []byte
+	key     []byte
+	keyName string
 }
 
 // NewKeyManagementServiceAES  the key management service interface using the AES key generation scheme
@@ -25,6 +26,7 @@ func (kms *KeyManagementServiceAES) GenerateKey() ([]byte, error) {
 		return nil, err
 	}
 	kms.key = []byte(keyStr)
+	kms.keyName = "default"
 	return kms.key, nil
 }
 
@@ -45,8 +47,9 @@ func (kms *KeyManagementServiceAES) GetPrivateKey() ([]byte, error) {
 }
 
 // ImportKey import a key into the key management service
-func (kms *KeyManagementServiceAES) ImportKey(key []byte) error {
+func (kms *KeyManagementServiceAES) ImportKey(key []byte, keyName string) error {
 	kms.key = key
+	kms.keyName = keyName
 	return nil
 }
 

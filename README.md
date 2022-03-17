@@ -81,8 +81,8 @@ https://blog.coupler.io/how-to-use-google-sheets-as-database/#Exportimport_data_
 #### Format the google sheet
 Once you have set up your Google account and created and shared your google sheet, you have to format it by adding these column headers in the first row:
 
-| ID | Title | Content | Hidden | Encrypted | CreatedAt|UpdatedAt |
-|----|-------|---------|--------|-----------|----------|----------|
+| ID | Title | Content | Hidden | Encrypted | EncKey | CreatedAt | UpdatedAt |
+|----|-------|---------|--------|-----------|--------|-----------|-----------|
 
 #### Configuring EcNotes with google account sync
 If you have followed the article and created the google account service, you've been asked to download the json file with the credentials to your computer. 

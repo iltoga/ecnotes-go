@@ -41,7 +41,7 @@ func (m *mockKeyManagementService) GetPrivateKey() ([]byte, error) {
 }
 
 // ImportKey ....
-func (m *mockKeyManagementService) ImportKey(key []byte) error {
+func (m *mockKeyManagementService) ImportKey(key []byte, keyName string) error {
 	m.priKey = key
 	return nil
 }

@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"encoding/hex"
 	"errors"
 	"reflect"
 	"testing"
@@ -21,8 +22,60 @@ var (
 		CreatedAt: 1643614680013,
 		UpdatedAt: 1643614680013,
 	}
-	aesKeyTest = "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456"
+	aesKeyTest         = "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456"
+	aesKeyTestBytes, _ = hex.DecodeString(aesKeyTest)
+	aesKeyTestDec, _   = cryptoUtil.DecryptAES256(aesKeyTestBytes, []byte(aesKeyTest))
 )
+
+type CertServiceMockImpl struct {
+	certs map[string]model.EncKey
+}
+
+// NewCertServiceMock ....
+func NewCertServiceMock() *CertServiceMockImpl {
+	return &CertServiceMockImpl{
+		certs: map[string]model.EncKey{
+			"testKey1": {
+				Name: "testKey1",
+				Key:  aesKeyTestBytes,
+				Algo: common.ENCRYPTION_ALGORITHM_AES_256_CBC,
+			},
+		},
+	}
+}
+
+// LoadCerts ....
+func (cs *CertServiceMockImpl) LoadCerts(pwd string) error {
+	return nil
+}
+
+// SaveCerts ....
+func (cs *CertServiceMockImpl) SaveCerts(pwd string) error {
+	return nil
+}
+
+// GetCert ....
+func (cs *CertServiceMockImpl) GetCert(name string) (*model.EncKey, error) {
+	if cert, ok := cs.certs[name]; ok {
+		return &cert, nil
+	}
+	return nil, errors.New(common.ERR_CERT_NOT_FOUND)
+}
+
+// AddCert ....
+func (cs *CertServiceMockImpl) AddCert(cert model.EncKey) error {
+	cs.certs[cert.Name] = cert
+	return nil
+}
+
+// RemoveCert ....
+func (cs *CertServiceMockImpl) RemoveCert(name string) error {
+	if _, ok := cs.certs[name]; ok {
+		delete(cs.certs, name)
+		return nil
+	}
+	return errors.New(common.ERR_CERT_NOT_FOUND)
+}
 
 // ObserverMockImpl ....
 type ObserverMockImpl struct{}
@@ -225,7 +278,7 @@ func (nsc *noteConfigServiceMockImpl) SaveConfig() error {
 // TestNoteServiceImpl_EncryptNote ....
 func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 	cryptoSrv := service.NewCryptoServiceAES(service.NewKeyManagementServiceAES())
-	cryptoSrv.GetKeyManager().ImportKey([]byte("1234567890123456"))
+	cryptoSrv.GetKeyManager().ImportKey([]byte("1234567890123456"), "testKey1")
 	type fields struct {
 		Titles        []string
 		NoteRepo      service.NoteServiceRepository
@@ -248,8 +301,8 @@ func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 				Titles:   []string{},
 				NoteRepo: nil,
 				ConfigService: &noteConfigServiceMockImpl{
-					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: aesKeyTest},
-					Loaded:  true,
+					Config: map[string]string{common.CONFIG_CUR_ENCRYPTION_KEY_NAME: "testKey1"},
+					Loaded: true,
 				},
 				Crypto: &service.CryptoServiceFactoryImpl{
 					Srv: cryptoSrv,
@@ -309,8 +362,8 @@ func TestNoteServiceImpl_SearchNotes(t *testing.T) {
 			fields: fields{
 				NoteRepo: noteRepositoryMock,
 				ConfigService: &noteConfigServiceMockImpl{
-					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: aesKeyTest},
-					Loaded:  true,
+					Config: map[string]string{common.CONFIG_CUR_ENCRYPTION_KEY_NAME: "testKey1"},
+					Loaded: true,
 				},
 				Titles:   noteRepositoryMock.mockedTitles,
 				Observer: &ObserverMockImpl{},
@@ -329,8 +382,8 @@ func TestNoteServiceImpl_SearchNotes(t *testing.T) {
 			fields: fields{
 				NoteRepo: noteRepositoryMock,
 				ConfigService: &noteConfigServiceMockImpl{
-					Globals: map[string]string{common.CONFIG_ENCRYPTION_KEY: aesKeyTest},
-					Loaded:  true,
+					Config: map[string]string{common.CONFIG_CUR_ENCRYPTION_KEY_NAME: "testKey1"},
+					Loaded: true,
 				},
 				Titles:   noteRepositoryMock.mockedTitles,
 				Observer: &ObserverMockImpl{},

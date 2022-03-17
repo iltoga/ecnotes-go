@@ -11,7 +11,8 @@ import (
 
 // KeyManagementServiceRSAImpl implementation of the key management service interface
 type KeyManagementServiceRSAImpl struct {
-	key []byte
+	key     []byte
+	keyName string
 }
 
 // NewKeyManagementServiceRSA  the key management service interface using the RSA OAEP key generation scheme
@@ -31,6 +32,7 @@ func (kms *KeyManagementServiceRSAImpl) GenerateKey() ([]byte, error) {
 
 	// store the key
 	kms.key = keyBytes
+	kms.keyName = "default"
 	return keyBytes, nil
 }
 
@@ -72,7 +74,7 @@ func (kms *KeyManagementServiceRSAImpl) GetPrivateKey() ([]byte, error) {
 }
 
 // ImportKey validate and import the key
-func (kms *KeyManagementServiceRSAImpl) ImportKey(key []byte) error {
+func (kms *KeyManagementServiceRSAImpl) ImportKey(key []byte, keyName string) error {
 	// validate the key
 	keyBlock, err := x509.ParsePKCS1PrivateKey(key)
 	if err != nil {
@@ -80,6 +82,7 @@ func (kms *KeyManagementServiceRSAImpl) ImportKey(key []byte) error {
 	}
 	// marshal and store the key
 	kms.key = x509.MarshalPKCS1PrivateKey(keyBlock)
+	kms.keyName = keyName
 	return nil
 }
 

@@ -18,6 +18,7 @@ ecnotes-go.tar.xz
 
 # Sensitive files which shouldn't be in version control
 resources/config.toml*
+resources/key_store.json
 resources/logs/
 
 # Dependency directories (remove the comment below to include it)

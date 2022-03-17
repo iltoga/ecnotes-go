@@ -109,7 +109,7 @@ func (gp *GoogleProvider) CacheUpdAtUnset(noteID int) {
 
 // GetNotes fetch from the provider notes with given id or all if no ids is given
 func (gp *GoogleProvider) GetNotes(ids ...int) ([]model.Note, error) {
-	readRange := fmt.Sprintf("%s!A2:G", gp.sheetName)
+	readRange := fmt.Sprintf("%s!A2:H", gp.sheetName)
 	resp, err := gp.sheetsService.Spreadsheets.Values.Get(gp.sheetID, readRange).Do()
 	if err != nil {
 		log.Fatalf("Unable to retrieve data from sheet: %v", err)
@@ -201,7 +201,7 @@ func (gp *GoogleProvider) GetNote(id int) (*model.Note, error) {
 		return nil, errors.New(common.ERR_NOTE_NOT_FOUND)
 	}
 	noteIDx += 2 // add 2 to the index to get the correct row
-	readRangeRow := fmt.Sprintf("%s!A%d:G%d", gp.sheetName, noteIDx, noteIDx)
+	readRangeRow := fmt.Sprintf("%s!A%d:H%d", gp.sheetName, noteIDx, noteIDx)
 	// read the note from sheet in readRangeRow
 	respGetNote, err := gp.sheetsService.Spreadsheets.Values.Get(gp.sheetID, readRangeRow).Do()
 	if err != nil {
@@ -239,9 +239,9 @@ func (gp *GoogleProvider) PutNote(note *model.Note) error {
 		noteIDx += 2 // add 2 to the index to get the correct row
 	}
 	// create/update a new row in the sheet
-	writeRange := fmt.Sprintf("%s!A%d:G%d", gp.sheetName, noteIDx, noteIDx)
+	writeRange := fmt.Sprintf("%s!A%d:H%d", gp.sheetName, noteIDx, noteIDx)
 	values := [][]interface{}{
-		{note.ID, note.Title, note.Content, note.Hidden, note.Encrypted, note.CreatedAt, note.UpdatedAt},
+		{note.ID, note.Title, note.Content, note.Hidden, note.Encrypted, note.EncKey, note.CreatedAt, note.UpdatedAt},
 	}
 	_, err := gp.sheetsService.Spreadsheets.Values.Update(gp.sheetID, writeRange, &sheets.ValueRange{
 		Values: values,
@@ -268,7 +268,7 @@ func (gp *GoogleProvider) DeleteNote(id int) error {
 	}
 	noteIDx += 2 // add 2 to the index to get the correct row
 	// delete the row from the sheet
-	deleteRange := fmt.Sprintf("%s!A%d:G%d", gp.sheetName, noteIDx, noteIDx)
+	deleteRange := fmt.Sprintf("%s!A%d:H%d", gp.sheetName, noteIDx, noteIDx)
 	_, err := gp.sheetsService.Spreadsheets.Values.Clear(gp.sheetID, deleteRange, &sheets.ClearValuesRequest{}).
 		Context(gp.ctx).
 		Do()
@@ -408,8 +408,9 @@ func (*GoogleProvider) ParseSheetRow(row []interface{}) model.Note {
 		Content:   row[2].(string),
 		Hidden:    common.StringToBool(row[3].(string)),
 		Encrypted: common.StringToBool(row[4].(string)),
-		CreatedAt: common.StringToInt64(row[5].(string)),
-		UpdatedAt: common.StringToInt64(row[6].(string)),
+		EncKey:    row[5].(string),
+		CreatedAt: common.StringToInt64(row[6].(string)),
+		UpdatedAt: common.StringToInt64(row[7].(string)),
 	}
 	return note
 }

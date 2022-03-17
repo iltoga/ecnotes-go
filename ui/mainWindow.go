@@ -28,13 +28,15 @@ type MainWindowImpl struct {
 	WindowDefaultOptions
 	titlesDataBinding binding.ExternalStringList
 	selectedNote      *model.Note
+	selectedNoteID    int
 	w                 fyne.Window
 	cryptoService     service.CryptoServiceFactory
 }
 
 func NewMainWindow(
 	ui *UImpl,
-	cryptoService service.CryptoServiceFactory) MainWindow {
+	cryptoService service.CryptoServiceFactory,
+) MainWindow {
 	return &MainWindowImpl{
 		UImpl:         *ui,
 		cryptoService: cryptoService,
@@ -46,11 +48,20 @@ func (ui *MainWindowImpl) GetWindow() fyne.Window {
 	return ui.w
 }
 
+// getCurEncryptionKey returns the current encryption key
+func (ui *MainWindowImpl) getCurEncryptionKey() (*model.EncKey, error) {
+	keyName, err := ui.confService.GetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME)
+	if err != nil {
+		return nil, err
+	}
+	return ui.certService.GetCert(keyName)
+}
+
 // createWindowContainer creates a container with the window content
 func (ui *MainWindowImpl) createWindowContainer() *fyne.Container {
 	var winLoaderText string
 	// if we have encryption key, show password entry to decrypt and save to global map
-	if _, err := ui.confSrv.GetConfigBytes(common.CONFIG_ENCRYPTION_KEY); err == nil {
+	if _, err := ui.getCurEncryptionKey(); err == nil {
 		winLoaderText = "Decrypting encryption key..."
 	} else {
 		winLoaderText = "Generating encryption key..."
@@ -91,9 +102,9 @@ func (ui *MainWindowImpl) createWindowContainer() *fyne.Container {
 		}
 	})
 	deleteNoteBtn := widget.NewButton("Delete", func() {
-		if ui.selectedNote != nil {
+		if ui.selectedNoteID != 0 {
 			// delete note from db
-			err := ui.noteService.DeleteNote(ui.selectedNote.ID)
+			err := ui.noteService.DeleteNote(ui.selectedNoteID)
 			if err != nil {
 				ui.ShowNotification("Error deleting note", err.Error())
 				return
@@ -145,7 +156,7 @@ func (ui *MainWindowImpl) createPasswordPopUp(w fyne.Window, c *fyne.Container) 
 	ch := make(chan bool)
 	// check if we have encryption key in the config
 	keyAction := common.EncryptionKeyAction_Decrypt
-	if _, err := ui.confSrv.GetConfigBytes(common.CONFIG_ENCRYPTION_KEY); err != nil {
+	if nCerts, err := ui.certService.CountCerts(); err != nil || nCerts == 0 {
 		keyAction = common.EncryptionKeyAction_Generate
 	}
 	ui.createPasswordDialog(keyAction, ch)
@@ -166,19 +177,24 @@ func (ui *MainWindowImpl) createMainWindowMenu() *fyne.MainMenu {
 		Label: "Copy encryption key to clipboard",
 		Action: func() {
 			// get the (password encrypted) encryption key
-			encKey, err := ui.confSrv.GetConfig(common.CONFIG_ENCRYPTION_KEY)
+			key, err := ui.getCurEncryptionKey()
 			if err != nil {
 				ui.ShowNotification("", "It looks like encryption key has not been generated yet")
 				return
 			}
-			// get encryption algorithm
-			encAlgo, err := ui.confSrv.GetConfig(common.CONFIG_ENCRYPTION_ALGORITHM)
+			// encrypt the encryption key with the password and copy to clipboard
+			pwd, err := ui.confService.GetGlobal(common.CONFIG_ENCRYPTION_KEYS_PWD)
 			if err != nil {
-				ui.ShowNotification("", "It looks like encryption algorithm has not been set yet")
+				ui.ShowNotification("", "No password set to encrypt the encryption key")
+				return
+			}
+			encKey, err := cryptoUtil.EncryptMessage(key.Key, pwd)
+			if err != nil {
+				ui.ShowNotification("", "Error encrypting the encryption key")
 				return
 			}
 			// content to be copied to clipboard
-			content := fmt.Sprintf("%s:%s", encAlgo, encKey)
+			content := fmt.Sprintf("%s:%s", key.Algo, encKey)
 			ui.w.Clipboard().SetContent(content)
 		},
 	}
@@ -191,18 +207,9 @@ func (ui *MainWindowImpl) createMainWindowMenu() *fyne.MainMenu {
 					return
 				}
 				// try to decrypt the key with the password using aes-256-cbc in crytpoUtils
-				key, err := cryptoUtil.DecryptAES256([]byte(keyPwd), []byte(encKey))
+				key, err := cryptoUtil.DecryptMessage([]byte(encKey), keyPwd)
 				if err != nil {
 					ui.ShowNotification("Invalid Key", "Error decrypting key: "+err.Error())
-					return
-				}
-
-				if err := ui.confSrv.SetConfig(common.CONFIG_ENCRYPTION_KEY, encKey); err != nil {
-					ui.ShowNotification("Error saving encryption key to configuration", err.Error())
-					return
-				}
-				if err := ui.confSrv.SaveConfig(); err != nil {
-					ui.ShowNotification("Error updating configuration file", err.Error())
 					return
 				}
 				// validate encryption algorithm against supported algorithms (in constants.go)
@@ -210,8 +217,31 @@ func (ui *MainWindowImpl) createMainWindowMenu() *fyne.MainMenu {
 					ui.ShowNotification("Error", "Unsupported encryption algorithm")
 					return
 				}
-				if err := ui.confSrv.SetConfig(common.CONFIG_ENCRYPTION_ALGORITHM, encAlgo); err != nil {
-					ui.ShowNotification("Error saving encryption algorithm to configuration", err.Error())
+
+				// add the key to the certificate store
+				cert := model.EncKey{
+					// FIXME: add "Name" text field to the dialog
+					Name: "Imported key",
+					Algo: encAlgo,
+					Key:  key,
+				}
+				if err := ui.certService.AddCert(cert); err != nil {
+					ui.ShowNotification("Error", "Error adding key to certificate store: "+err.Error())
+					return
+				}
+				// update the encryption key list
+				if err := ui.certService.SaveCerts(keyPwd); err != nil {
+					ui.ShowNotification("Error", "Error saving key to certificate store: "+err.Error())
+					return
+				}
+				// set default encryption key name in config
+				if err := ui.confService.SetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME, cert.Name); err != nil {
+					ui.ShowNotification("Error", "Error setting default encryption key name: "+err.Error())
+					return
+				}
+				// save config
+				if err := ui.confService.SaveConfig(); err != nil {
+					ui.ShowNotification("Error", "Error saving config: "+err.Error())
 					return
 				}
 
@@ -230,7 +260,7 @@ func (ui *MainWindowImpl) createMainWindowMenu() *fyne.MainMenu {
 					return
 				}
 				// re-encrypt all notes with the new encryption key
-				if err := ui.noteService.ReEncryptNotes(notes, encAlgo, key); err != nil {
+				if err := ui.noteService.ReEncryptNotes(notes, cert); err != nil {
 					ui.ShowNotification("Error", "Error re-encrypting notes: "+err.Error())
 					return
 				}
@@ -340,10 +370,14 @@ func (ui *MainWindowImpl) createNoteList(titles []string) fyne.CanvasObject {
 	noteList.OnSelected = func(lii widget.ListItemID) {
 		var err error
 		// get note from db
-		noteID := ui.noteService.GetNoteIDFromTitle(titles[lii])
-		ui.selectedNote, err = ui.noteService.GetNoteWithContent(noteID)
+		ui.selectedNoteID = ui.noteService.GetNoteIDFromTitle(titles[lii])
+		ui.selectedNote, err = ui.noteService.GetNoteWithContent(ui.selectedNoteID)
 		if err != nil {
-			ui.ShowNotification("Error Loading note from db", err.Error())
+			if err.Error() == "cipher: message authentication failed" {
+				ui.ShowNotification("", common.ERR_CANNOT_DECRYPT_MISSING_KEY)
+			} else {
+				ui.ShowNotification("", "Error getting note: "+err.Error())
+			}
 			return
 		}
 		ui.GetObserver().Notify(
@@ -391,7 +425,7 @@ func (ui *MainWindowImpl) createPasswordDialog(keyAction common.EncryptionKeyAct
 		dgTitle string
 	)
 
-	doReturn := func(keyAction common.EncryptionKeyAction, ch chan bool, err error, algo string, key []byte) {
+	doReturn := func(keyAction common.EncryptionKeyAction, ch chan bool, err error) {
 		if err != nil {
 			ui.ShowNotification("Error", err.Error())
 			dg.Hide()
@@ -416,39 +450,38 @@ func (ui *MainWindowImpl) createPasswordDialog(keyAction common.EncryptionKeyAct
 			// generate encryption key
 			decryptedKey, err := ui.cryptoService.GetSrv().GetKeyManager().GenerateKey()
 			if err != nil {
-				doReturn(keyAction, ch, err, algo, nil)
+				doReturn(keyAction, ch, err)
 				return
 			}
-			// encrypt the key with password input in the password entry
-			encryptedKey, err := cryptoUtil.EncryptMessage(decryptedKey, pwd)
-			if err != nil {
-				err = fmt.Errorf("error encrypting encryption key: %s", err.Error())
-				doReturn(keyAction, ch, err, algo, decryptedKey)
+			// add the key to cert store
+			cert := model.EncKey{
+				// FIXME: add "Name" text field to the dialog
+				Name: "default",
+				Algo: algo,
+				Key:  decryptedKey,
+			}
+			if err := ui.certService.AddCert(cert); err != nil {
+				err = fmt.Errorf("error adding encryption key to cert store: %s", err.Error())
+				doReturn(keyAction, ch, err)
 				return
 			}
-			// save encrypted encryption key to config file
-			err = ui.confSrv.SetConfigBytes(common.CONFIG_ENCRYPTION_KEY, encryptedKey)
-			if err != nil {
-				err = fmt.Errorf("error setting configuration item: %s", err.Error())
-				doReturn(keyAction, ch, err, algo, decryptedKey)
+			if err := ui.certService.SaveCerts(pwd); err != nil {
+				err = fmt.Errorf("error saving encryption key to cert store: %s", err.Error())
+				doReturn(keyAction, ch, err)
 				return
 			}
-			ui.confSrv.SetGlobalBytes(common.CONFIG_ENCRYPTION_KEY, decryptedKey)
-
-			// save encryption algo to config file
-			err = ui.confSrv.SetConfig(common.CONFIG_ENCRYPTION_ALGORITHM, algo)
-			if err != nil {
-				err = fmt.Errorf("error setting configuration item: %s", err.Error())
-				doReturn(keyAction, ch, err, algo, decryptedKey)
+			// set the key as the default key
+			if err := ui.confService.SetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME, cert.Name); err != nil {
+				err = fmt.Errorf("error setting default encryption key: %s", err.Error())
+				doReturn(keyAction, ch, err)
 				return
 			}
-			if err = ui.confSrv.SaveConfig(); err != nil {
+			if err = ui.confService.SaveConfig(); err != nil {
 				err = fmt.Errorf("error saving configuration: %s", err.Error())
-				doReturn(keyAction, ch, err, algo, decryptedKey)
+				doReturn(keyAction, ch, err)
 				return
 			}
-			ui.confSrv.SetGlobal(common.CONFIG_ENCRYPTION_ALGORITHM, algo)
-			doReturn(keyAction, ch, err, algo, decryptedKey)
+			doReturn(keyAction, ch, err)
 		}
 		// select widget with supported encryption algorithms
 		encAlgoWdg := widget.NewSelect(common.SUPPORTED_ENCRYPTION_ALGORITHMS, func(s string) {
@@ -481,48 +514,34 @@ func (ui *MainWindowImpl) createPasswordDialog(keyAction common.EncryptionKeyAct
 	case common.EncryptionKeyAction_Decrypt:
 		dgTitle = "Decrypt Encryption Key"
 		onConfirm := func(pwd string) {
+			// load all certs from the cert store
+			if err := ui.certService.LoadCerts(pwd); err != nil {
+				doReturn(keyAction, ch, err)
+				return
+			}
+			// get the default key name from the configuration
+			keyName, err := ui.confService.GetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME)
+			if err != nil {
+				doReturn(keyAction, ch, err)
+				return
+			}
+			// get default certificate from cert store
+			// Note: the default key name is set in the configuration and is the one that is used
+			// to encrypt/decrypt the notes by default
+			cert, err := ui.certService.GetCert(keyName)
+			if err != nil {
+				doReturn(keyAction, ch, err)
+				return
+			}
 			// get algo from config file
-			algo, err := ui.confSrv.GetConfig(common.CONFIG_ENCRYPTION_ALGORITHM)
-			if err != nil {
-				err = fmt.Errorf("error getting configuration item: %s", err.Error())
-				doReturn(keyAction, ch, err, algo, nil)
-				return
-			}
-
-			// decrypt the key with password input in the password entry
-			encryptedKey, err := ui.confSrv.GetConfigBytes(common.CONFIG_ENCRYPTION_KEY)
-			if err != nil {
-				err = fmt.Errorf("error loading encryption key from app configuration: %s", err.Error())
-				doReturn(keyAction, ch, err, algo, nil)
-				return
-			}
-			decryptedKey, err := cryptoUtil.DecryptMessage(encryptedKey, pwd)
-			if err != nil {
-				err = fmt.Errorf("error decrypting encryption key: %s", err.Error())
-				doReturn(keyAction, ch, err, algo, decryptedKey)
-				return
-			}
-			ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(algo))
+			ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(cert.Algo))
 			// import decrypted key to crypto service to validate it
-			if err = ui.cryptoService.GetSrv().GetKeyManager().ImportKey(decryptedKey); err != nil {
+			if err = ui.cryptoService.GetSrv().GetKeyManager().ImportKey(cert.Key, cert.Name); err != nil {
 				err = fmt.Errorf("error importing key: %s", err.Error())
-				doReturn(keyAction, ch, err, algo, decryptedKey)
+				doReturn(keyAction, ch, err)
 				return
 			}
-			// TODO: this is probably no necessary as the key is already imported and we can use the one above
-			// get the key from crypto service
-			if decryptedKey, err = ui.cryptoService.GetSrv().GetKeyManager().GetPrivateKey(); err != nil {
-				doReturn(keyAction, ch, err, algo, decryptedKey)
-				return
-			}
-			// save decrypted encryption key to config file
-			ui.confSrv.SetGlobalBytes(common.CONFIG_ENCRYPTION_KEY, decryptedKey)
-			if err = ui.confSrv.SaveConfig(); err != nil {
-				err = fmt.Errorf("error saving configuration: %s", err.Error())
-				doReturn(keyAction, ch, err, algo, decryptedKey)
-				return
-			}
-			doReturn(keyAction, ch, err, algo, decryptedKey)
+			doReturn(keyAction, ch, err)
 		}
 		keyPasswordWdg := widget.NewPasswordEntry()
 		wdg = container.NewBorder(
@@ -540,7 +559,7 @@ func (ui *MainWindowImpl) createPasswordDialog(keyAction common.EncryptionKeyAct
 		)
 	default:
 		err := errors.New("unknown key action")
-		doReturn(keyAction, ch, err, "", nil)
+		doReturn(keyAction, ch, err)
 		return
 	}
 

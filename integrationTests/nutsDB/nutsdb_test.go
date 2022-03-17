@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/iltoga/ecnotes-go/lib/common"
-	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
 	"github.com/iltoga/ecnotes-go/model"
 	"github.com/iltoga/ecnotes-go/service"
 	"github.com/iltoga/ecnotes-go/service/observer"
@@ -18,6 +17,7 @@ import (
 var (
 	configService  service.ConfigService
 	noteService    service.NoteService
+	certService    service.CertService
 	noteRepository service.NoteServiceRepository
 	kvdbPath       string
 	defaultBucket  = "notes"
@@ -116,20 +116,34 @@ func (s *nutsDBSuiteTest) TestUpdateDeleteNote() {
 
 func mockConfig() {
 	// make sure we have the encryption key
-	key, err := configService.GetConfigBytes(common.CONFIG_ENCRYPTION_KEY)
+	keyFilePath, err := configService.GetConfig(common.CONFIG_KEY_FILE_PATH)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	// decrypt the key
+	certService = service.NewCertService(keyFilePath)
+	certPwd := "1234"
+	if err := certService.LoadCerts(certPwd); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	// make sure we have testKey1 cert in testKeys.json
+	_, err = certService.GetCert("testKey1")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
-	decKey, err := cryptoUtil.DecryptMessage(key, "1234")
-	if err != nil {
+	// add keys password to globals so that we can decrypt the keys later
+	configService.SetGlobal(common.CONFIG_ENCRYPTION_KEYS_PWD, certPwd)
+	if err := configService.SetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME, "testKey1"); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	// add decrypted key to globals so we can use it to encrypt/decrypt notes before storing them
-	configService.SetGlobal(common.CONFIG_ENCRYPTION_KEY, string(decKey))
+	if err := configService.SaveConfig(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 	kvdbPath, err = configService.GetConfig(common.CONFIG_KVDB_PATH)
 	if err != nil {
 		fmt.Println(err)
@@ -160,10 +174,21 @@ func initDB() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	cryptoSrvF := &service.CryptoServiceFactoryImpl{
-		Srv: service.NewCryptoServiceAES(service.NewKeyManagementServiceAES()),
+	// get current encryption key from cert service and inject it into the CryptoService
+	keyName, err := configService.GetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
-	cryptoSrvF.Srv.GetKeyManager().ImportKey([]byte("1234"))
+	cert, err := certService.GetCert(keyName)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	cryptoSrvF := &service.CryptoServiceFactoryImpl{
+		Srv: service.NewCryptoServiceFactory(cert.Algo),
+	}
+	cryptoSrvF.Srv.GetKeyManager().ImportKey(cert.Key, cert.Name)
 	noteService = service.NewNoteService(noteRepository, configService, observer.NewObserver(), cryptoSrvF)
 }
 
