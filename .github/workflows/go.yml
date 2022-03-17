@@ -19,10 +19,9 @@ jobs:
       with:
         go-version: 1.18
         
-    - name: Install jq tool
+    - name: Install xorg dev (for fyne)
       run: |
-        sudo apt-get update
-        sudo apt-get install -y libx11-dev mesa-common-dev libxi-dev libxext-dev
+        sudo apt-get install -y xorg-dev
 
     - name: Build
       run: go build -v ./...
