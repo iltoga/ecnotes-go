@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 
 	"github.com/iltoga/ecnotes-go/lib/common"
+	"github.com/iltoga/ecnotes-go/model"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -18,6 +19,15 @@ type KeyManagementServiceRSAImpl struct {
 // NewKeyManagementServiceRSA  the key management service interface using the RSA OAEP key generation scheme
 func NewKeyManagementServiceRSA() KeyManagementService {
 	return &KeyManagementServiceRSAImpl{}
+}
+
+// GetCertificate get the certificate of the key
+func (kms *KeyManagementServiceRSAImpl) GetCertificate() model.EncKey {
+	return model.EncKey{
+		Key:  kms.key,
+		Name: kms.keyName,
+		Algo: common.ENCRYPTION_ALGORITHM_RSA_OAEP,
+	}
 }
 
 // GenerateKey generate a new key

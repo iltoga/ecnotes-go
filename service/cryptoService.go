@@ -1,6 +1,9 @@
 package service
 
-import "github.com/iltoga/ecnotes-go/lib/common"
+import (
+	"github.com/iltoga/ecnotes-go/lib/common"
+	"github.com/iltoga/ecnotes-go/model"
+)
 
 // CryptoService interface for crypto service implementation (encryption, signing, etc)
 type CryptoService interface {
@@ -28,6 +31,8 @@ type KeyManagementService interface {
 	GetPrivateKey() ([]byte, error)
 	// ImportKey import a key into the key management service
 	ImportKey(key []byte, keyName string) error
+	// GetCertificate get the certificate for the given key
+	GetCertificate() model.EncKey
 }
 
 // NewCrytpServiceFactory create a new crypto service bases on the given key management service and algorithm and inject it into the CryptoServiceImpl

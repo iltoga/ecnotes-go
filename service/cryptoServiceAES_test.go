@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/iltoga/ecnotes-go/lib/common"
+	"github.com/iltoga/ecnotes-go/model"
 	"github.com/iltoga/ecnotes-go/service"
 	"github.com/stretchr/testify/assert"
 )
@@ -19,6 +20,14 @@ type mockAESKeyManagementService struct {
 // NewMockAESKeyManagementService returns a new mock service.KeyManagementService implementation
 func NewMockAESKeyManagementService(priKey []byte) service.KeyManagementService {
 	return &mockAESKeyManagementService{priKey}
+}
+
+func (m *mockAESKeyManagementService) GetCertificate() model.EncKey {
+	return model.EncKey{
+		Key:  m.aesKey,
+		Name: "testKey1",
+		Algo: common.ENCRYPTION_ALGORITHM_RSA_OAEP,
+	}
 }
 
 // GenerateKey generates a new mocked key

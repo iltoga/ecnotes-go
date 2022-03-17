@@ -361,7 +361,7 @@ func (ns *NoteServiceImpl) EncryptNote(note *model.Note) error {
 	if note == nil || note.Title == "" || note.Content == "" {
 		return errors.New(common.ERR_NOTE_EMPTY)
 	}
-	note.EncKey = ns.Crypto.GetSrv().GetAlgorithm()
+	note.EncKeyName = ns.Crypto.GetSrv().GetKeyManager().GetCertificate().Name
 	encryptedContent, err := ns.Crypto.GetSrv().Encrypt([]byte(note.Content))
 	if err != nil {
 		return err

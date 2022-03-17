@@ -5,6 +5,7 @@ import (
 
 	"github.com/iltoga/ecnotes-go/lib/common"
 	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
+	"github.com/iltoga/ecnotes-go/model"
 )
 
 // KeyManagementServiceAES interface for key management service implementation (key generation, etc)
@@ -16,6 +17,15 @@ type KeyManagementServiceAES struct {
 // NewKeyManagementServiceAES  the key management service interface using the AES key generation scheme
 func NewKeyManagementServiceAES() KeyManagementService {
 	return &KeyManagementServiceAES{}
+}
+
+// GetCertificate get the certificate of the key
+func (kms *KeyManagementServiceAES) GetCertificate() model.EncKey {
+	return model.EncKey{
+		Key:  kms.key,
+		Name: kms.keyName,
+		Algo: common.ENCRYPTION_ALGORITHM_AES_256_CBC,
+	}
 }
 
 // GenerateKey generate a new key for AES (symmetric) encryption
