@@ -20,4 +20,5 @@ const (
 	ERR_INVALID_HEX_STRING                    = "invalid hex string"
 	ERR_CERT_NOT_FOUND                        = "certificate not found"
 	ERR_CANNOT_DECRYPT_MISSING_KEY            = "message cannot be decrypted. Missing key?"
+	ERR_UNKNOWN_KEY_ACTION                    = "unknown key action"
 )

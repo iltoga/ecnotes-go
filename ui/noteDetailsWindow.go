@@ -96,14 +96,15 @@ func (ui *NoteDetailsWindowImpl) CreateWindow(
 		}
 	})
 
-	if visible {
-		w.Show()
+	// set focus on first form element, after small delay
+	go func() {
+		time.Sleep(time.Millisecond * 500)
 		if titleWidget, err := ui.GetWidget(common.WDG_NOTE_DETAILS_TITLE); err == nil {
 			ui.SetFocusOnWidget(w, titleWidget.(*widget.Entry))
 		} else {
 			log.Printf("Error getting title widget: %v", err)
 		}
-	}
+	}()
 }
 
 func (ui *NoteDetailsWindowImpl) updateWidgetsData(n *model.Note) {
@@ -405,8 +406,8 @@ func (ui *NoteDetailsWindowImpl) createFormWidget(w fyne.Window) fyne.CanvasObje
 			nil,
 		),
 		titleWidget,
-		bottomContainer,
 		contentWidget,
+		bottomContainer,
 		contentWidgetRichText,
 	)
 

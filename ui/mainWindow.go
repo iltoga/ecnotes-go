@@ -109,6 +109,7 @@ func (ui *MainWindowImpl) createWindowContainer() *fyne.Container {
 				ui.ShowNotification("Error deleting note", err.Error())
 				return
 			}
+			ui.ShowNotification("Note Deleted", err.Error())
 		}
 	})
 
@@ -414,161 +415,238 @@ func (ui *MainWindowImpl) UpdateNoteListWidget() observer.Listener {
 	}
 }
 
-func (ui *MainWindowImpl) createPasswordDialog(keyAction common.EncryptionKeyAction, ch chan bool) {
+// loadCertDialog
+// note: return both the widget and the dialog
+func (ui *MainWindowImpl) loadCertDialog(
+	keyName string,
+	dgTitle string,
+	ch chan bool,
+) (fyne.CanvasObject, dialog.Dialog, error) {
+
 	var (
-		// encryptedKey, decryptedKey []byte
-		// decryptedKeyStr            string
 		wdg fyne.CanvasObject
 		dg  dialog.Dialog
 		// err     error
 		exitApp = true
-		dgTitle string
 	)
 
-	doReturn := func(keyAction common.EncryptionKeyAction, ch chan bool, err error) {
+	doReturn := func(ch chan bool, err error) {
 		if err != nil {
 			ui.ShowNotification("Error", err.Error())
 			dg.Hide()
 			return
 		}
-		if keyAction == common.EncryptionKeyAction_Decrypt {
-			ui.ShowNotification("Success", "Key decrypted successfully")
-		} else {
-			ui.ShowNotification("Success", "Key encrypted successfully")
-		}
+		ui.ShowNotification("Success", "Key decrypted successfully")
 
 		exitApp = false
 		dg.Hide()
 		ch <- true
 	}
 
-	switch keyAction {
-	case common.EncryptionKeyAction_Generate:
-		dgTitle = "Generate Encryption Key"
-		onConfirm := func(algo string, pwd string) {
-			ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(algo))
-			// generate encryption key
-			decryptedKey, err := ui.cryptoService.GetSrv().GetKeyManager().GenerateKey()
-			if err != nil {
-				doReturn(keyAction, ch, err)
-				return
-			}
-			// add the key to cert store
-			cert := model.EncKey{
-				// FIXME: add "Name" text field to the dialog
-				Name: "default",
-				Algo: algo,
-				Key:  decryptedKey,
-			}
-			if err := ui.certService.AddCert(cert); err != nil {
-				err = fmt.Errorf("error adding encryption key to cert store: %s", err.Error())
-				doReturn(keyAction, ch, err)
-				return
-			}
-			if err := ui.certService.SaveCerts(pwd); err != nil {
-				err = fmt.Errorf("error saving encryption key to cert store: %s", err.Error())
-				doReturn(keyAction, ch, err)
-				return
-			}
-			// set the key as the default key
-			if err := ui.confService.SetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME, cert.Name); err != nil {
-				err = fmt.Errorf("error setting default encryption key: %s", err.Error())
-				doReturn(keyAction, ch, err)
-				return
-			}
-			if err = ui.confService.SaveConfig(); err != nil {
-				err = fmt.Errorf("error saving configuration: %s", err.Error())
-				doReturn(keyAction, ch, err)
-				return
-			}
-			doReturn(keyAction, ch, err)
+	onConfirm := func(keyName, pwd string) {
+		// load all certs from the cert store
+		if err := ui.certService.LoadCerts(pwd); err != nil {
+			doReturn(ch, err)
+			return
 		}
-		// select widget with supported encryption algorithms
-		encAlgoWdg := widget.NewSelect(common.SUPPORTED_ENCRYPTION_ALGORITHMS, func(s string) {
-		})
-		keyPasswordWdg := widget.NewPasswordEntry()
-		wdg = container.NewVBox(
-			widget.NewLabel("Select encryption algorithm you want to use"),
-			encAlgoWdg,
-			widget.NewLabel("Enter the password to encrypt the key"),
-			keyPasswordWdg,
-			widget.NewLabel(
-				"Attention!\n"+
-					"keep the password in mind or write it down and put it in a safe place.\n"+
-					"If you lose it the only way to read your notes will be\n"+
-					"to brute force the encrypted key ;)",
-			),
-			widget.NewButton("Confirm", func() {
-				// validate input fields first
-				if encAlgoWdg.Selected == "" {
-					ui.ShowNotification("Error", "please select an encryption algorithm")
-					return
-				}
-				if keyPasswordWdg.Text == "" {
-					ui.ShowNotification("Error", "password cannot be empty")
-					return
-				}
-				onConfirm(encAlgoWdg.Selected, keyPasswordWdg.Text)
-			}),
-		)
-	case common.EncryptionKeyAction_Decrypt:
-		dgTitle = "Decrypt Encryption Key"
-		onConfirm := func(pwd string) {
-			// load all certs from the cert store
-			if err := ui.certService.LoadCerts(pwd); err != nil {
-				doReturn(keyAction, ch, err)
-				return
-			}
-			// get the default key name from the configuration
-			keyName, err := ui.confService.GetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME)
-			if err != nil {
-				doReturn(keyAction, ch, err)
-				return
-			}
-			// get default certificate from cert store
-			// Note: the default key name is set in the configuration and is the one that is used
-			// to encrypt/decrypt the notes by default
-			cert, err := ui.certService.GetCert(keyName)
-			if err != nil {
-				doReturn(keyAction, ch, err)
-				return
-			}
-			// get algo from config file
-			ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(cert.Algo))
-			// import decrypted key to crypto service to validate it
-			if err = ui.cryptoService.GetSrv().GetKeyManager().ImportKey(cert.Key, cert.Name); err != nil {
-				err = fmt.Errorf("error importing key: %s", err.Error())
-				doReturn(keyAction, ch, err)
-				return
-			}
-			doReturn(keyAction, ch, err)
+		// get default certificate from cert store
+		// Note: the default key name is set in the configuration and is the one that is used
+		// to encrypt/decrypt the notes by default
+		cert, err := ui.certService.GetCert(keyName)
+		if err != nil {
+			doReturn(ch, err)
+			return
 		}
-		keyPasswordWdg := widget.NewPasswordEntry()
-		wdg = container.NewBorder(
-			widget.NewLabel("Enter the password to decrypt the key"),
-			widget.NewButton("Confirm", func() {
-				// validate input fields first
-				if keyPasswordWdg.Text == "" {
-					ui.ShowNotification("Error", "password cannot be empty")
-					return
-				}
-				onConfirm(keyPasswordWdg.Text)
-			}),
-			nil, nil,
-			keyPasswordWdg,
-		)
-	default:
-		err := errors.New("unknown key action")
-		doReturn(keyAction, ch, err)
-		return
+		// get algo from config file
+		ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(cert.Algo))
+		// import decrypted key to crypto service to validate it
+		if err = ui.cryptoService.GetSrv().GetKeyManager().ImportKey(cert.Key, cert.Name); err != nil {
+			err = fmt.Errorf("error importing key: %s", err.Error())
+			doReturn(ch, err)
+			return
+		}
+		doReturn(ch, err)
 	}
+	// create the dialog's content
+	keyPasswordWdg := widget.NewPasswordEntry()
+	wdg = container.NewBorder(
+		widget.NewLabel("Enter the password to decrypt the key"),
+		widget.NewButton("Confirm", func() {
+			// validate input fields first
+			if keyPasswordWdg.Text == "" {
+				ui.ShowNotification("Error", "password cannot be empty")
+				return
+			}
+			onConfirm(keyName, keyPasswordWdg.Text)
+		}),
+		nil, nil,
+		keyPasswordWdg,
+	)
 
+	// dialog defaults
 	dg = dialog.NewCustom(dgTitle, "Cancel", wdg, ui.w)
 	dg.SetOnClosed(func() {
 		if exitApp {
 			ui.Stop()
 		}
 	})
-	dg.Resize(fyne.NewSize(500, 200))
-	dg.Show()
+
+	return wdg, dg, nil
+}
+
+// newCertDialog creates a widget to insert a new certificate
+// note: return both the widget and the dialog
+func (ui *MainWindowImpl) newCertDialog(
+	dgTitle string,
+	setDefaultKey bool,
+	ch chan bool,
+) (fyne.CanvasObject, dialog.Dialog, error) {
+
+	var (
+		wdg fyne.CanvasObject
+		dg  dialog.Dialog
+		// err     error
+		exitApp = true
+	)
+
+	doReturn := func(ch chan bool, err error) {
+		if err != nil {
+			ui.ShowNotification("Error", err.Error())
+			dg.Hide()
+			return
+		}
+		ui.ShowNotification("Success", "Key encrypted successfully")
+
+		exitApp = false
+		dg.Hide()
+		ch <- true
+	}
+
+	onConfirm := func(keyName, algo, pwd string, defKey bool, ch chan bool) {
+		ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(algo))
+		// generate encryption key
+		decryptedKey, err := ui.cryptoService.GetSrv().GetKeyManager().GenerateKey()
+		if err != nil {
+			doReturn(ch, err)
+			return
+		}
+		// add the key to cert store
+		cert := model.EncKey{
+			// generated key always has the same name
+			Name: keyName,
+			Algo: algo,
+			Key:  decryptedKey,
+		}
+		if err := ui.certService.AddCert(cert); err != nil {
+			err = fmt.Errorf("error adding encryption key to cert store: %s", err.Error())
+			doReturn(ch, err)
+			return
+		}
+		if err := ui.certService.SaveCerts(pwd); err != nil {
+			err = fmt.Errorf("error saving encryption key to cert store: %s", err.Error())
+			doReturn(ch, err)
+			return
+		}
+		if defKey {
+			// set the key as the default key
+			if err := ui.confService.SetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME, cert.Name); err != nil {
+				err = fmt.Errorf("error setting default encryption key: %s", err.Error())
+				doReturn(ch, err)
+				return
+			}
+			if err = ui.confService.SaveConfig(); err != nil {
+				err = fmt.Errorf("error saving configuration: %s", err.Error())
+				doReturn(ch, err)
+				return
+			}
+		}
+		doReturn(ch, err)
+	}
+
+	// widget to add a key to the key store
+	keyNameWdg := widget.NewEntry()
+	if setDefaultKey {
+		keyNameWdg.SetText("ecNotes")
+	}
+	// select widget with supported encryption algorithms
+	encAlgoWdg := widget.NewSelect(common.SUPPORTED_ENCRYPTION_ALGORITHMS, func(s string) {})
+	keyPasswordWdg := widget.NewPasswordEntry()
+	// add a checkbox to set the key as the default key
+	defaultKeyWdg := widget.NewCheck("Set as default key", func(b bool) {})
+	// don't allow to uncheck the default key if there is no key in the store
+	if setDefaultKey {
+		defaultKeyWdg.SetChecked(true)
+		defaultKeyWdg.Disable()
+	}
+
+	// create the dialog's content
+	wdg = container.NewVBox(
+		widget.NewLabel("Enter a name for the key"),
+		keyNameWdg,
+		widget.NewLabel("Select encryption algorithm you want to use"),
+		encAlgoWdg,
+		widget.NewLabel("Enter the password to encrypt the key"),
+		keyPasswordWdg,
+		widget.NewLabel(
+			"Attention!\n"+
+				"keep the password in mind or write it down and put it in a safe place.\n"+
+				"If you lose it the only way to read your notes will be\n"+
+				"to brute force the encrypted key ;)",
+		),
+		defaultKeyWdg,
+		widget.NewButton("Confirm", func() {
+			// validate input fields first
+			if keyNameWdg.Text == "" {
+				ui.ShowNotification("Error", "Key name is required")
+				return
+			}
+			if encAlgoWdg.Selected == "" {
+				ui.ShowNotification("Error", "please select an encryption algorithm")
+				return
+			}
+			if keyPasswordWdg.Text == "" {
+				ui.ShowNotification("Error", "password cannot be empty")
+				return
+			}
+			onConfirm(keyNameWdg.Text, encAlgoWdg.Selected, keyPasswordWdg.Text, setDefaultKey, ch)
+		}),
+	)
+
+	// dialog defaults
+	dg = dialog.NewCustom(dgTitle, "Cancel", wdg, ui.w)
+	dg.SetOnClosed(func() {
+		if exitApp {
+			ui.Stop()
+		}
+	})
+
+	return wdg, dg, nil
+}
+
+// createPasswordDialog creates a widget to generate a default certificate or load and decrypt the one from the key store
+func (ui *MainWindowImpl) createPasswordDialog(keyAction common.EncryptionKeyAction, ch chan bool) {
+	switch keyAction {
+	case common.EncryptionKeyAction_Generate:
+		dgTitle := "Generate Encryption Key"
+		_, dg, _ := ui.newCertDialog(dgTitle, true, ch)
+		dg.Resize(fyne.NewSize(500, 200))
+		dg.Show()
+		return
+	case common.EncryptionKeyAction_Decrypt:
+		dgTitle := "Decrypt Encryption Key"
+		// get the default key name from the configuration
+		keyName, err := ui.confService.GetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME)
+		if err != nil {
+			ui.ShowNotification(common.ERR_KEY_NOT_FOUND, err.Error())
+			return
+		}
+		_, dg, _ := ui.loadCertDialog(keyName, dgTitle, ch)
+		dg.Resize(fyne.NewSize(500, 200))
+		dg.Show()
+		return
+	default:
+		err := errors.New("unknown key action")
+		ui.ShowNotification(common.ERR_UNKNOWN_KEY_ACTION, err.Error())
+		return
+	}
 }
