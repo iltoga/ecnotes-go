@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"sort"
 
 	"github.com/iltoga/ecnotes-go/lib/common"
@@ -162,18 +163,38 @@ func (ns *NoteServiceImpl) SaveEncryptedNotes(notes []model.Note) error {
 
 // ReEncryptNotes re-encrypts a batch of notes with a given key and encryption algorithm
 func (ns *NoteServiceImpl) ReEncryptNotes(notes []model.Note, cert model.EncKey) error {
-	// update crypto service with the new key so that from now on it will be used to encrypt/decrypt
-	ns.Crypto.SetSrv(NewCryptoServiceFactory(cert.Algo))
-	if err := ns.Crypto.GetSrv().GetKeyManager().ImportKey(cert.Key, cert.Name); err != nil {
+	oldSrv := ns.Crypto.GetSrv()
+	if oldSrv == nil {
+		return errors.New(common.ERR_NO_KEY)
+	}
+
+	newSrv := NewCryptoServiceFactory(cert.Algo)
+	if newSrv == nil {
+		return fmt.Errorf("unsupported encryption algorithm: %q", cert.Algo)
+	}
+	if err := newSrv.GetKeyManager().ImportKey(cert.Key, cert.Name); err != nil {
 		return err
 	}
-	// re-encrypt all notes with the new encryption key
+
+	ns.Crypto.SetSrv(newSrv)
 	for _, note := range notes {
-		if err := ns.UpdateNoteContent(&note); err != nil {
+		noteCopy := note
+		if noteCopy.Encrypted {
+			encryptedContent, err := hex.DecodeString(noteCopy.Content)
+			if err != nil {
+				return err
+			}
+			decryptedContent, err := oldSrv.Decrypt(encryptedContent)
+			if err != nil {
+				return err
+			}
+			noteCopy.Content = string(decryptedContent)
+			noteCopy.Encrypted = false
+		}
+		if err := ns.UpdateNoteContent(&noteCopy); err != nil {
 			return err
 		}
 	}
-	// get all note titles from db and notify the observer
 	_, err := ns.GetNotes()
 	if err != nil {
 		return err
@@ -182,29 +203,27 @@ func (ns *NoteServiceImpl) ReEncryptNotes(notes []model.Note, cert model.EncKey)
 }
 
 // processAndSave centralizes decryption, snapshotting, encryption, and repo saving
-func (ns *NoteServiceImpl) processAndSave(note *model.Note, action func(*model.Note) error) (*model.Note, error) {
-	if note.Encrypted {
-		if err := ns.DecryptNote(note); err != nil {
-			return nil, err
+func (ns *NoteServiceImpl) processAndSave(note *model.Note, action func(*model.Note) error) (savedNote *model.Note, decNote *model.Note, err error) {
+	noteCopy := *note
+	if noteCopy.Encrypted {
+		if err := ns.DecryptNote(&noteCopy); err != nil {
+			return nil, nil, err
 		}
 	}
-	oldContent := note.Content
-	if err := ns.EncryptNote(note); err != nil {
-		return nil, err
+	decNoteCopy := noteCopy
+	if err := ns.EncryptNote(&noteCopy); err != nil {
+		return nil, nil, err
 	}
-	if err := action(note); err != nil {
-		return nil, err
+	if err := action(&noteCopy); err != nil {
+		return nil, nil, err
 	}
-	// always return unencrypted content after saving
-	decNote := *note
-	decNote.Content = oldContent
-	decNote.Encrypted = false
-	return &decNote, nil
+	savedNoteCopy := noteCopy
+	return &savedNoteCopy, &decNoteCopy, nil
 }
 
 // emitNoteChanged triggers the notification for the UI observer
-func (ns *NoteServiceImpl) emitNoteChanged(event observer.Event, decNote *model.Note, origNote *model.Note) {
-	ns.Observer.Notify(event, *decNote, common.WindowMode_Edit, common.WindowAction_Update, origNote)
+func (ns *NoteServiceImpl) emitNoteChanged(event observer.Event, decNote *model.Note, savedNote *model.Note) {
+	ns.Observer.Notify(event, decNote, common.WindowMode_Edit, common.WindowAction_Update, savedNote)
 }
 
 // CreateNote adds a new note to the repo
@@ -221,12 +240,11 @@ func (ns *NoteServiceImpl) CreateNote(note *model.Note) error {
 	note.CreatedAt = common.GetCurrentTimestamp()
 	note.UpdatedAt = common.GetCurrentTimestamp()
 
-	ns.Titles = append(ns.Titles, note.Title)
-	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
-
-	decNote, err := ns.processAndSave(note, ns.NoteRepo.CreateNote)
+	savedNote, decNote, err := ns.processAndSave(note, ns.NoteRepo.CreateNote)
 	if err == nil {
-		ns.emitNoteChanged(observer.EVENT_CREATE_NOTE, decNote, note)
+		ns.Titles = append(ns.Titles, savedNote.Title)
+		ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
+		ns.emitNoteChanged(observer.EVENT_CREATE_NOTE, decNote, savedNote)
 	}
 	return err
 }
@@ -243,9 +261,9 @@ func (ns *NoteServiceImpl) UpdateNoteContent(note *model.Note) error {
 	}
 	note.UpdatedAt = common.GetCurrentTimestamp()
 
-	decNote, err := ns.processAndSave(note, ns.NoteRepo.UpdateNote)
+	savedNote, decNote, err := ns.processAndSave(note, ns.NoteRepo.UpdateNote)
 	if err == nil {
-		ns.emitNoteChanged(observer.EVENT_UPDATE_NOTE, decNote, note)
+		ns.emitNoteChanged(observer.EVENT_UPDATE_NOTE, decNote, savedNote)
 	}
 	return err
 }
@@ -279,7 +297,7 @@ func (ns *NoteServiceImpl) UpdateNoteTitle(oldTitle, newTitle string) (noteID in
 	note.ID = newIndex
 	note.UpdatedAt = common.GetCurrentTimestamp()
 
-	_, err = ns.processAndSave(note, func(n *model.Note) error {
+	_, _, err = ns.processAndSave(note, func(n *model.Note) error {
 		return ns.NoteRepo.RenameNote(oldIndex, n)
 	})
 	if err != nil {
@@ -309,15 +327,16 @@ func (ns *NoteServiceImpl) DeleteNote(id int) error {
 	if err != nil {
 		return err
 	}
-	// remove the note from the titles array
+	if err = ns.NoteRepo.DeleteNote(id); err != nil {
+		return err
+	}
+
+	// remove the note from the titles array only after the repo delete succeeds
 	for i, title := range ns.Titles {
 		if title == note.Title {
 			ns.Titles = append(ns.Titles[:i], ns.Titles[i+1:]...)
 			break
 		}
-	}
-	if err = ns.NoteRepo.DeleteNote(id); err != nil {
-		return err
 	}
 
 	// emit a note titles' update event

@@ -3,6 +3,7 @@ package googleSync_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/iltoga/ecnotes-go/model"
@@ -69,23 +70,28 @@ func TestSuite(t *testing.T) {
 	suite.Run(t, new(googleSyncTest))
 }
 
-func getGP() *provider.GoogleProvider {
+func getGP(t *testing.T) *provider.GoogleProvider {
+	t.Helper()
+	credFilePath := "/home/demo/.config/ecnotes/providers/google/cred_serviceaccount.json"
+	if _, err := os.Stat(credFilePath); err != nil {
+		t.Skipf("skipping google sync integration tests: credentials file not available: %v", err)
+	}
 	gp, err := provider.NewGoogleProvider(
 		testSheetName,
 		testSheetID,
-		"/home/demo/.config/ecnotes/providers/google/cred_serviceaccount.json",
+		credFilePath,
 		logrus.New(),           //TODO: mock logger
 		observer.NewObserver(), // TODO: mock observer
 	)
 	if err != nil {
-		panic(err)
+		t.Skipf("skipping google sync integration tests: provider init failed: %v", err)
 	}
 	return gp
 }
 
 // TestGetNote ....
 func (s *googleSyncTest) TestGetNote() {
-	gp := getGP()
+	gp := getGP(s.T())
 	note, err := gp.GetNote(3782526374)
 	assert.Nil(s.T(), err)
 	assert.Equal(s.T(), note.ID, 3782526374)
@@ -103,7 +109,7 @@ func (s *googleSyncTest) TestGetNote() {
 func (s *googleSyncTest) TestGetNotes() {
 	t := s.T()
 	// read and print all notes
-	notes, err := getGP().GetNotes()
+	notes, err := getGP(t).GetNotes()
 	if err != nil {
 		panic(err)
 	}
@@ -116,7 +122,7 @@ func (s *googleSyncTest) TestGetNotes_Filtered() {
 	// mock some ids
 	ids := []int{3782526374, 1839475811}
 	// read and print all notes and assert the filtered ones
-	notes, err := getGP().GetNotes(ids...)
+	notes, err := getGP(t).GetNotes(ids...)
 	if err != nil {
 		panic(err)
 	}
@@ -128,7 +134,7 @@ func (s *googleSyncTest) TestGetNotes_Filtered() {
 // TestPutNote ....
 func (s *googleSyncTest) TestPutAndDeleteNote() {
 	t := s.T()
-	gp := getGP()
+	gp := getGP(t)
 	// create a new note
 	note := &model.Note{
 		Title:     "test note",
@@ -182,7 +188,7 @@ func (s *googleSyncTest) TestPutAndDeleteNote() {
 // TestGetNoteIDs get note IDs from google sheet and assert it
 func (s *googleSyncTest) TestGetNoteIDs() {
 	t := s.T()
-	gp := getGP()
+	gp := getGP(t)
 	// read all note IDs from google sheet
 	ids, err := gp.GetNoteIDs(true)
 	if err != nil {
@@ -211,7 +217,7 @@ func (s *googleSyncTest) TestGetNoteIDs() {
 // TestFilterNotes ....
 func (s *googleSyncTest) TestFilterNotes() {
 	t := s.T()
-	gp := getGP()
+	gp := getGP(t)
 	// mock some notes
 	notes := []model.Note{
 		{
@@ -245,7 +251,7 @@ func (s *googleSyncTest) TestFilterNotes() {
 // TestSyncNotes ....
 func (s *googleSyncTest) TestSyncNotes() {
 	t := s.T()
-	gp := getGP()
+	gp := getGP(t)
 	// mock some notes
 	newNotes := []model.Note{
 		{

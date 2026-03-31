@@ -1,12 +1,14 @@
 package service_test
 
 import (
+	"path/filepath"
 	"sync"
 	"testing"
 
 	"github.com/iltoga/ecnotes-go/service"
 	toml "github.com/pelletier/go-toml"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type suite struct {
@@ -18,19 +20,21 @@ type ConfigServiceTestSuite struct {
 	suite
 }
 
-func (s *ConfigServiceTestSuite) TestParseConfigTree(t *assert.TestingT) {
+func TestParseConfigTree(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
 	config, _ := toml.Load(`
 crt_file = "./main.crt"
 key_file = "./main.key"
 `)
 
-	s.mockConfig = config
-	s.configService, _ = service.NewConfigService()
-	s.configService.ParseConfigTree(config)
-	fileCrt, _ := s.configService.GetConfig("crt_file")
-	assert.Equal(*t, "./main.crt", fileCrt)
-	fileKey, _ := s.configService.GetConfig("key_file")
-	assert.Equal(*t, "./main.key", fileKey)
+	configService, _ := service.NewConfigService()
+	configService.ParseConfigTree(config)
+	fileCrt, _ := configService.GetConfig("crt_file")
+	assert.Equal(t, "./main.crt", fileCrt)
+	fileKey, _ := configService.GetConfig("key_file")
+	assert.Equal(t, "./main.key", fileKey)
 }
 
 func (s *ConfigServiceTestSuite) TestConfigServiceImpl_GetConfig(t *testing.T) {
@@ -333,4 +337,47 @@ func TestGetGlobal(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConfigService_NewConfigService_RoundTrip(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	configService, err := service.NewConfigService()
+	require.NoError(t, err)
+
+	expectedResourcePath := filepath.Join(homeDir, ".config", "ecnotes")
+	assert.Equal(t, expectedResourcePath, configService.GetResourcePath())
+
+	require.NoError(t, configService.SetConfig("custom_key", "custom_value"))
+	require.NoError(t, configService.SetConfigBytes("custom_bytes", []byte{0x01, 0x02}))
+	configService.SetGlobal("global_key", "global_value")
+	configService.SetGlobalBytes("global_bytes", []byte{0x03, 0x04})
+	require.NoError(t, configService.SaveConfig())
+
+	gotConfig, err := configService.GetConfig("custom_key")
+	require.NoError(t, err)
+	assert.Equal(t, "custom_value", gotConfig)
+
+	gotConfigBytes, err := configService.GetConfigBytes("custom_bytes")
+	require.NoError(t, err)
+	assert.Equal(t, []byte{0x01, 0x02}, gotConfigBytes)
+
+	gotGlobal, err := configService.GetGlobal("global_key")
+	require.NoError(t, err)
+	assert.Equal(t, "global_value", gotGlobal)
+
+	gotGlobalBytes, err := configService.GetGlobalBytes("global_bytes")
+	require.NoError(t, err)
+	assert.Equal(t, []byte{0x03, 0x04}, gotGlobalBytes)
+
+	parsed, err := toml.Load(`parsed_key = "parsed_value"`)
+	require.NoError(t, err)
+	configService.ParseConfigTree(parsed)
+
+	gotParsed, err := configService.GetConfig("parsed_key")
+	require.NoError(t, err)
+	assert.Equal(t, "parsed_value", gotParsed)
+
+	require.NoError(t, configService.LoadConfig())
 }

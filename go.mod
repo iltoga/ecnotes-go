@@ -1,6 +1,6 @@
 module github.com/iltoga/ecnotes-go
 
-go 1.25.0
+go 1.26.1
 
 require (
 	fyne.io/fyne/v2 v2.3.1

@@ -1,11 +1,30 @@
+// Package ui contains only widget construction, layout, and event wiring.
+//
+// # Architecture contract — READ BEFORE EDITING
+//
+// This file is intentionally THIN. The rules are:
+//
+//  1. No business logic here. Every non-trivial operation (crypto, config
+//     mutations, file I/O) must live in a service (KeyService, NoteService, …)
+//     or a lib/util. Call those from callbacks; never inline the logic.
+//
+//  2. Widget callbacks are allowed to:
+//     - Read widget state (text, selected value, checkbox, …)
+//     - Call a service method
+//     - Call ShowNotification / Hide / Show / ch<-true
+//     Nothing else.
+//
+//  3. If you feel the urge to import "encoding/hex", "crypto/…", or call
+//     certService / confService directly from this file: stop. Add or extend a
+//     KeyService method instead, then call that.
+//
+//  4. keyService (ui.keyService) owns ALL encryption-key lifecycle operations.
+//     Never duplicate that logic here.
 package ui
 
 import (
-	"encoding/hex"
-	"errors"
 	"fmt"
 	"log"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -14,7 +33,6 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/iltoga/ecnotes-go/lib/common"
-	"github.com/iltoga/ecnotes-go/lib/cryptoUtil"
 	"github.com/iltoga/ecnotes-go/model"
 	"github.com/iltoga/ecnotes-go/service"
 	"github.com/iltoga/ecnotes-go/service/observer"
@@ -45,49 +63,76 @@ func NewMainWindow(
 	}
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// noButtonDialog — a dialog.Dialog adapter backed by widget.ModalPopUp.
+//
+// Fyne v2.3.1's dialog.NewCustom always allocates a dismiss button, even when
+// the dismiss text is "". That renders as a small phantom rectangle (visual
+// artifact). This adapter uses widget.NewModalPopUp directly, which gives us
+// full control over the content with zero built-in buttons.
+// ──────────────────────────────────────────────────────────────────────────────
+
+type noButtonDialog struct {
+	popup    *widget.PopUp
+	onClosed func()
+}
+
+func (d *noButtonDialog) Show()                   { d.popup.Show() }
+func (d *noButtonDialog) Hide()                   { d.popup.Hide(); if d.onClosed != nil { d.onClosed() } }
+func (d *noButtonDialog) Refresh()                { d.popup.Refresh() }
+func (d *noButtonDialog) Resize(s fyne.Size)      { d.popup.Resize(s) }
+func (d *noButtonDialog) MinSize() fyne.Size      { return d.popup.MinSize() }
+func (d *noButtonDialog) SetDismissText(_ string) {} // no button — intentionally a no-op
+func (d *noButtonDialog) SetOnClosed(fn func())   { d.onClosed = fn }
+
+// newModalNoCancel builds a modal popup with a title label and arbitrary content
+// but without any dismiss button. Returns the raw *widget.PopUp (for resize) and
+// a hide closure that can be stored and called from callbacks.
+func (ui *MainWindowImpl) newModalNoCancel(title string, content fyne.CanvasObject) *widget.PopUp {
+	titleLabel := widget.NewLabelWithStyle(title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	wrapped := container.NewVBox(
+		container.NewPadded(titleLabel),
+		widget.NewSeparator(),
+		container.NewPadded(content),
+	)
+	// NewModalPopUp blocks interaction without any built-in button bar — no phantom button.
+	popup := widget.NewModalPopUp(wrapped, ui.w.Canvas())
+	return popup
+}
+
 // GetWindow returns the window object
 func (ui *MainWindowImpl) GetWindow() fyne.Window {
 	return ui.w
 }
 
-// getCurEncryptionKey returns the current encryption key
-func (ui *MainWindowImpl) getCurEncryptionKey() (*model.EncKey, error) {
-	keyName, err := ui.confService.GetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME)
-	if err != nil {
-		return nil, err
-	}
-	return ui.certService.GetCert(keyName)
+// getCurEncryptionKeyName returns the name of the configured default key.
+// This is the only config read allowed in the UI layer; it is a pure lookup
+// used only for display / routing purposes, not for crypto operations.
+func (ui *MainWindowImpl) getCurEncryptionKeyName() (string, error) {
+	return ui.confService.GetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME)
 }
 
-// createWindowContainer creates a container with the window content
+// createWindowContainer builds the main layout skeleton (search, buttons, separator).
 func (ui *MainWindowImpl) createWindowContainer() *fyne.Container {
 	var winLoaderText string
-	// if we have encryption key, show password entry to decrypt and save to global map
-	if _, err := ui.getCurEncryptionKey(); err == nil {
+	if _, err := ui.getCurEncryptionKeyName(); err == nil {
 		winLoaderText = "Decrypting encryption key..."
 	} else {
 		winLoaderText = "Generating encryption key..."
 	}
 
-	// create main layout
 	searchBox := widget.NewEntry()
 	searchBox.SetPlaceHolder("Search note titles")
 	ui.AddWidget(common.WDG_SEARCH_BOX, searchBox)
 	searchBox.OnChanged = func(text string) {
-		// when search box is changed
-		// use fuzzy search to find titles that match the search text
-		_, err := ui.noteService.SearchNotes(text, true)
-		if err != nil {
+		if _, err := ui.noteService.SearchNotes(text, true); err != nil {
 			ui.ShowNotification("Error searching notes", err.Error())
-			return
 		}
 	}
 
-	// create buttons
 	newNoteBtn := widget.NewButton("New", func() {
 		ui.GetObserver().
 			Notify(observer.EVENT_CREATE_NOTE_WINDOW, new(model.Note), common.WindowMode_Edit, common.WindowAction_New)
-		// set note details window to be visible
 		if err := ui.SetWindowVisibility(common.WIN_NOTE_DETAILS, true); err != nil {
 			ui.ShowNotification("Error", err.Error())
 		}
@@ -99,44 +144,25 @@ func (ui *MainWindowImpl) createWindowContainer() *fyne.Container {
 			if err := ui.noteService.UpdateNoteContent(ui.selectedNote); err != nil {
 				ui.ShowNotification("Error updating note content", err.Error())
 			}
-			// this is to allow user to see the note content unencrypted in the note details window
 			ui.selectedNote.Content = unEncContent
 		}
 	})
 	deleteNoteBtn := widget.NewButton("Delete", func() {
 		if ui.selectedNoteID != 0 {
-			// delete note from db
-			err := ui.noteService.DeleteNote(ui.selectedNoteID)
-			if err != nil {
+			if err := ui.noteService.DeleteNote(ui.selectedNoteID); err != nil {
 				ui.ShowNotification("Error deleting note", err.Error())
 				return
 			}
-			ui.ShowNotification("Note Deleted", err.Error())
+			ui.ShowNotification("Note Deleted", "")
 		}
 	})
 
-	btnBar := container.New(
-		layout.NewHBoxLayout(),
-		newNoteBtn,
-		hideBtn,
-		deleteNoteBtn,
-	)
-
-	btnBarLayout := layout.NewBorderLayout(
-		nil,
-		nil,
-		nil,
-		btnBar,
-	)
+	btnBar := container.New(layout.NewHBoxLayout(), newNoteBtn, hideBtn, deleteNoteBtn)
 	btnContainer := container.New(
-		btnBarLayout,
+		layout.NewBorderLayout(nil, nil, nil, btnBar),
 		btnBar,
 	)
 
-	// horizontal separator
-	hSep := widget.NewSeparator()
-
-	// TODO: delete this if never shown
 	mainWinLoaderLabel := widget.NewLabel("Loading main window...")
 	mainWinLoaderLabel.Hidden = true
 	mainWinLoader := func(msg string) *widget.Label {
@@ -145,566 +171,332 @@ func (ui *MainWindowImpl) createWindowContainer() *fyne.Container {
 		return mainWinLoaderLabel
 	}
 
-	// render main layout
 	return container.NewVBox(
 		searchBox,
 		btnContainer,
-		hSep,
+		widget.NewSeparator(),
 		mainWinLoader(winLoaderText),
 	)
 }
 
-// createPasswordPopUp creates a modal dialog to enter password
+// createPasswordPopUp decides whether to auto-load a passwordless key or show a
+// dialog, then wires up the channel that triggers note-list rendering after auth.
 func (ui *MainWindowImpl) createPasswordPopUp(w fyne.Window, c *fyne.Container) error {
-	ch := make(chan bool)
-	// check if we have encryption key in the config
+	ch := make(chan bool, 1)
+
+	// Determine whether we need to generate a new key or just decrypt one.
 	keyAction := common.EncryptionKeyAction_Decrypt
 	if nCerts, err := ui.certService.CountCerts(); err != nil || nCerts == 0 {
 		keyAction = common.EncryptionKeyAction_Generate
 	}
 
-	// If we need to decrypt, try passwordless auto-load first
+	// Try silent / passwordless auto-load before showing any dialog.
 	if keyAction == common.EncryptionKeyAction_Decrypt {
-		keyName, err := ui.confService.GetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME)
-		if err == nil && keyName != "" {
-			if err := ui.certService.LoadCerts(""); err == nil {
-				cert, err := ui.certService.GetCert(keyName)
-				if err == nil {
-					ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(cert.Algo))
-					if err = ui.cryptoService.GetSrv().GetKeyManager().ImportKey(cert.Key, cert.Name); err == nil {
-						// Passwordless key loaded successfully — skip the dialog
-						go func() {
-							noteContainer := container.NewScroll(ui.runNoteList())
-							noteContainer.SetMinSize(w.Canvas().Size().Subtract(fyne.NewSize(100, 200)))
-							c.Add(noteContainer)
-						}()
-						return nil
-					}
-				}
-			}
+		if ok, err := ui.keyService.TryAutoLoad(); err != nil {
+			ui.ShowNotification("Error", "Auto-load failed: "+err.Error())
+		} else if ok {
+			go ui.addNoteList(w, c)
+			return nil
 		}
 	}
 
 	ui.createPasswordDialog(keyAction, ch)
 
 	go func() {
-		<-ch
-		noteContainer := container.NewScroll(ui.runNoteList())
-		noteContainer.SetMinSize(w.Canvas().Size().Subtract(fyne.NewSize(100, 200)))
-		c.Add(noteContainer)
+		if !<-ch {
+			return
+		}
+		ui.addNoteList(w, c)
 	}()
-
 	return nil
 }
 
-// createMainWindowMenu creates the main window menu
+// addNoteList is a helper that adds the scrollable note list to the main container.
+func (ui *MainWindowImpl) addNoteList(w fyne.Window, c *fyne.Container) {
+	noteContainer := container.NewScroll(ui.runNoteList())
+	noteContainer.SetMinSize(w.Canvas().Size().Subtract(fyne.NewSize(100, 200)))
+	c.Add(noteContainer)
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Menu
+// ──────────────────────────────────────────────────────────────────────────────
+
 func (ui *MainWindowImpl) createMainWindowMenu() *fyne.MainMenu {
 	menuItemCopyEncKey := &fyne.MenuItem{
 		Label: "Copy encryption key to clipboard",
 		Action: func() {
-			// get the (password encrypted) encryption key
-			key, err := ui.getCurEncryptionKey()
-			if err != nil {
-				ui.ShowNotification("", "It looks like encryption key has not been generated yet")
-				return
-			}
-			// encrypt the encryption key with the password and copy to clipboard
-			pwd, err := ui.confService.GetGlobal(common.CONFIG_ENCRYPTION_KEYS_PWD)
-			if err != nil {
-				ui.ShowNotification("", "No password set to encrypt the encryption key")
-				return
-			}
-			encKey, err := cryptoUtil.EncryptMessage(key.Key, pwd)
-			if err != nil {
-				ui.ShowNotification("", "Error encrypting the encryption key")
-				return
-			}
-			// content to be copied to clipboard
-			content := fmt.Sprintf("%s:%s", key.Algo, encKey)
-			ui.w.Clipboard().SetContent(content)
+			// Ask for the export password via a small dialog, then delegate to KeyService.
+			pwdWdg := widget.NewPasswordEntry()
+			pwdWdg.SetPlaceHolder("Password used to protect this key (or leave blank)")
+			var exportDg dialog.Dialog
+			exportDg = dialog.NewCustom("Export Encryption Key", "Cancel",
+				container.NewVBox(
+					widget.NewLabel("Enter the key password to encrypt the export:"),
+					pwdWdg,
+					widget.NewButton("Copy to Clipboard", func() {
+						result, err := ui.keyService.ExportKeyForClipboard(pwdWdg.Text)
+						if err != nil {
+							ui.ShowNotification("Error", err.Error())
+							return
+						}
+						ui.w.Clipboard().SetContent(result)
+						exportDg.Hide()
+						ui.ShowNotification("Copied", "Encryption key copied to clipboard")
+					}),
+				), ui.w)
+			exportDg.Resize(fyne.NewSize(460, 160))
+			exportDg.Show()
 		},
 	}
+
 	menuItemImportEncKey := &fyne.MenuItem{
 		Label: "Import encryption key",
 		Action: func() {
-			onConfirm := func(encKey, encAlgo, keyPwd string) {
-				if encKey == "" {
-					ui.ShowNotification("", "Encrypted key is empty! Canceling...")
-					return
-				}
-				// try to decrypt the key with the password using aes-256-cbc in crytpoUtils
-				key, err := cryptoUtil.DecryptMessage([]byte(encKey), keyPwd)
-				if err != nil {
-					ui.ShowNotification("Invalid Key", "Error decrypting key: "+err.Error())
-					return
-				}
-				// validate encryption algorithm against supported algorithms (in constants.go)
-				if !common.IsSupportedEncryptionAlgorithm(encAlgo) {
-					ui.ShowNotification("Error", "Unsupported encryption algorithm")
-					return
-				}
-
-				// add the key to the certificate store
-				cert := model.EncKey{
-					// FIXME: add "Name" text field to the dialog
-					Name: "Imported key",
-					Algo: encAlgo,
-					Key:  key,
-				}
-				if err := ui.certService.AddCert(cert); err != nil {
-					ui.ShowNotification("Error", "Error adding key to certificate store: "+err.Error())
-					return
-				}
-				// update the encryption key list
-				if err := ui.certService.SaveCerts(keyPwd); err != nil {
-					ui.ShowNotification("Error", "Error saving key to certificate store: "+err.Error())
-					return
-				}
-				// set default encryption key name in config
-				if err := ui.confService.SetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME, cert.Name); err != nil {
-					ui.ShowNotification("Error", "Error setting default encryption key name: "+err.Error())
-					return
-				}
-				// save config
-				if err := ui.confService.SaveConfig(); err != nil {
-					ui.ShowNotification("Error", "Error saving config: "+err.Error())
-					return
-				}
-
-				ui.ShowNotification(
-					"",
-					"Encryption key has been imported successfully. Now all notes will be re-encrypted",
-				)
-
-				// now reflect the changes in the app by setting the new encryption algo and key and re-encrypting all notes
-				// get encryption algorithm and key from configuration
-
-				// get all notes
-				notes, err := ui.noteService.GetNotes()
-				if err != nil {
-					ui.ShowNotification("Error", "Error getting all notes: "+err.Error())
-					return
-				}
-				// re-encrypt all notes with the new encryption key
-				if err := ui.noteService.ReEncryptNotes(notes, cert); err != nil {
-					ui.ShowNotification("Error", "Error re-encrypting notes: "+err.Error())
-					return
-				}
-				ui.ShowNotification("", "All notes have been re-encrypted successfully")
-			}
-
-			// create a widget with vertical layout and as a content: a label, a text input field, a slect list and a button
-			// to confirm the input
-			encKeyWdg := widget.NewEntry()
-			// select widget with supported encryption algorithms
-			encAlgoWdg := widget.NewSelect(common.SUPPORTED_ENCRYPTION_ALGORITHMS, func(s string) {
-				encKeyWdg.SetPlaceHolder(fmt.Sprintf("Enter %s key", s))
-			})
-			keyPasswordWdg := widget.NewPasswordEntry()
-			wdg := container.NewVBox(
-				widget.NewLabel("Enter the encryption key"),
-				encAlgoWdg,
-				encKeyWdg,
-				widget.NewLabel("Enter the password to decrypt the key"),
-				keyPasswordWdg,
-				widget.NewLabel(
-					"Attention! By confirming, the key will be saved in the configuration file.\n"+
-						"If there is already one, it will be overwritten.\n"+
-						"The above encryption key must have been generated by EcNotes, to guarantee that will work with the application.",
-				),
-				widget.NewButton("Confirm", func() {
-					onConfirm(encKeyWdg.Text, encAlgoWdg.Selected, keyPasswordWdg.Text)
-				}),
-			)
-			dg := dialog.NewCustom("Import Encryption Key", "Cancel", wdg, ui.w)
-			dg.Resize(fyne.NewSize(600, 200))
-			dg.Show()
+			ui.showImportKeyDialog()
 		},
 	}
 
 	menuItemGenerateEncKey := &fyne.MenuItem{
 		Label: "Generate New Encryption Key",
 		Action: func() {
-			ch := make(chan bool)
-			dgTitle := "Generate New Encryption Key"
-			// Not a startup dialog, so don't exit on close
-			_, dg, _ := ui.newCertDialog(dgTitle, true, false, ch)
-			dg.Resize(fyne.NewSize(600, 500))
-			dg.Show()
-
-			go func() {
-				success := <-ch
-				if success {
-					keyName, err := ui.confService.GetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME)
-					if err != nil {
-						return
-					}
-					cert, err := ui.certService.GetCert(keyName)
-					if err != nil {
-						return
-					}
-					notes, err := ui.noteService.GetNotes()
-					if err != nil {
-						ui.ShowNotification("Error", "Error getting all notes: "+err.Error())
-						return
-					}
-					if err := ui.noteService.ReEncryptNotes(notes, *cert); err != nil {
-						ui.ShowNotification("Error", "Error re-encrypting notes: "+err.Error())
-						return
-					}
-					ui.ShowNotification("", "All notes have been successfully migrated to the new encryption key!")
-				}
-			}()
+			ui.showGenerateKeyDialog(false)
 		},
 	}
 
-	menuItems := []*fyne.MenuItem{menuItemCopyEncKey, menuItemImportEncKey, menuItemGenerateEncKey}
-	menu := &fyne.Menu{
+	return fyne.NewMainMenu(&fyne.Menu{
 		Label: "File",
-		Items: menuItems,
-	}
-	return fyne.NewMainMenu(menu)
-}
-
-// CreateWindow ....
-func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bool, options map[string]interface{}) {
-	// init window
-	ui.ParseDefaultOptions(options)
-	w := ui.app.NewWindow(title)
-	ui.AddWindow("main", w)
-	ui.w = w
-	if ui.windowAspect == common.WindowAspect_FullScreen {
-		w.SetFullScreen(true)
-	} else {
-		w.Resize(fyne.NewSize(width, height))
-	}
-	w.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
-		if e.Name == fyne.KeyF11 {
-			ui.ToggleFullScreen(w)
-		}
+		Items: []*fyne.MenuItem{menuItemCopyEncKey, menuItemImportEncKey, menuItemGenerateEncKey},
 	})
-
-	// create main window menu
-	w.SetMainMenu(ui.createMainWindowMenu())
-	// create window container
-	mainLayout := ui.createWindowContainer()
-	w.SetMaster()
-	w.Show()
-	_ = ui.createPasswordPopUp(w, mainLayout)
-	w.SetContent(mainLayout)
-	// w.CenterOnScreen()
 }
 
-func (ui *MainWindowImpl) runNoteList() fyne.CanvasObject {
-	// load notes into a fyne.List
-	titles := ui.noteService.GetTitles()
-	if len(titles) == 0 {
-		// load notes from db (and populate titles array)
-		_, err := ui.noteService.GetNotes()
-		if err != nil {
-			return &widget.Card{
-				Title: "error",
-				Content: widget.NewLabel(
-					err.Error(),
-				),
+// ──────────────────────────────────────────────────────────────────────────────
+// Dialogs — Import key
+// ──────────────────────────────────────────────────────────────────────────────
+
+// showImportKeyDialog presents the import-key UI and delegates all import logic
+// to KeyService.ImportKey.
+func (ui *MainWindowImpl) showImportKeyDialog() {
+	encKeyWdg := widget.NewEntry()
+	encKeyWdg.SetPlaceHolder("Paste ALGO:HEX or raw encrypted hex")
+	encAlgoWdg := widget.NewSelect(common.SUPPORTED_ENCRYPTION_ALGORITHMS, func(s string) {
+		encKeyWdg.SetPlaceHolder(fmt.Sprintf("Enter %s key", s))
+	})
+	keyPasswordWdg := widget.NewPasswordEntry()
+
+	wdg := container.NewVBox(
+		widget.NewLabel("Paste the exported key string (ALGO:HEX), or a raw encrypted key"),
+		encAlgoWdg,
+		encKeyWdg,
+		widget.NewLabel("Enter the password used to encrypt the key"),
+		keyPasswordWdg,
+		widget.NewLabel(
+			"Attention! By confirming, the key will be saved in the configuration file.\n"+
+				"If there already is one, it will be overwritten.\n"+
+				"The key must have been generated by EcNotes.",
+		),
+		widget.NewButton("Confirm", func() {
+			if _, err := ui.keyService.ImportKey(encKeyWdg.Text, encAlgoWdg.Selected, keyPasswordWdg.Text); err != nil {
+				ui.ShowNotification("Error", err.Error())
+				return
 			}
-		}
-		titles = ui.noteService.GetTitles()
-		if len(titles) == 0 {
-			ui.ShowNotification("", "Note list is empty")
-		}
-	}
-	return ui.createNoteList(titles)
+			ui.ShowNotification("", "Encryption key imported. All notes have been re-encrypted.")
+		}),
+	)
+	dg := dialog.NewCustom("Import Encryption Key", "Cancel", wdg, ui.w)
+	dg.Resize(fyne.NewSize(600, 200))
+	dg.Show()
 }
 
-func (ui *MainWindowImpl) createNoteList(titles []string) fyne.CanvasObject {
-	ui.titlesDataBinding = binding.BindStringList(&titles)
-	noteList := widget.NewListWithData(ui.titlesDataBinding,
-		func() fyne.CanvasObject {
-			return widget.NewLabel("template")
-		},
-		func(i binding.DataItem, o fyne.CanvasObject) {
-			o.(*widget.Label).Bind(i.(binding.String))
-		})
+// ──────────────────────────────────────────────────────────────────────────────
+// Dialogs — Generate / load key
+// ──────────────────────────────────────────────────────────────────────────────
 
-	ui.AddWidget(common.WDG_NOTE_LIST, noteList)
+// showGenerateKeyDialog presents the key-generation UI.
+// isStartup=false means the dialog is opened from the File menu; the app does
+// not quit if the user cancels.
+func (ui *MainWindowImpl) showGenerateKeyDialog(isStartup bool) {
+	ch := make(chan bool, 1)
+	_, dg, _ := ui.newCertDialog("Generate New Encryption Key", true, isStartup, ch)
+	dg.Resize(fyne.NewSize(600, 650))
+	dg.Show()
 
-	noteList.OnSelected = func(lii widget.ListItemID) {
-		var err error
-		// get note from db
-		ui.selectedNoteID = ui.noteService.GetNoteIDFromTitle(titles[lii])
-		ui.selectedNote, err = ui.noteService.GetNoteWithContent(ui.selectedNoteID)
-		if err != nil {
-			if err.Error() == "cipher: message authentication failed" {
-				ui.ShowNotification("", common.ERR_CANNOT_DECRYPT_MISSING_KEY)
-			} else {
-				ui.ShowNotification("", "Error getting note: "+err.Error())
-			}
+	go func() {
+		if !<-ch {
 			return
 		}
-		ui.GetObserver().Notify(
-			observer.EVENT_UPDATE_NOTE_WINDOW,
-			ui.selectedNote,
-			common.WindowMode_Edit,
-			common.WindowAction_Update)
-		ui.SetWindowVisibility(common.WIN_NOTE_DETAILS, true)
-	}
-
-	return noteList
+		keyName, err := ui.getCurEncryptionKeyName()
+		if err != nil {
+			return
+		}
+		cert, err := ui.certService.GetCert(keyName)
+		if err != nil {
+			return
+		}
+		notes, err := ui.noteService.GetNotes()
+		if err != nil {
+			ui.ShowNotification("Error", "Error loading notes for re-encryption: "+err.Error())
+			return
+		}
+		if err := ui.keyService.RotateKey(notes, *cert); err != nil {
+			ui.ShowNotification("Error", err.Error())
+			return
+		}
+		ui.ShowNotification("", "All notes have been migrated to the new encryption key!")
+	}()
 }
 
-// UpdateNoteList listener (observer) triggered when the note tiles are u
-func (ui *MainWindowImpl) UpdateNoteListWidget() observer.Listener {
-	return observer.Listener{
-		OnNotify: func(titles interface{}, args ...interface{}) {
-			if titles == nil {
-				return
-			}
-			uiTitles, ok := titles.([]string)
-			if !ok {
-				log.Println("UpdateNoteList: invalid message value")
-				return
-			}
-			// TODO: take in account the search box
-			if ui.titlesDataBinding != nil {
-				if err := ui.titlesDataBinding.Set(uiTitles); err != nil {
-					log.Println("UpdateNoteList: error setting data:", err)
-					return
-				}
-			}
-		},
-	}
-}
-
-// loadCertDialog
-// note: return both the widget and the dialog
+// loadCertDialog builds the "Decrypt Encryption Key" dialog.
+// Auth logic is delegated entirely to KeyService.
 func (ui *MainWindowImpl) loadCertDialog(
 	keyName string,
 	dgTitle string,
 	ch chan bool,
 ) (fyne.CanvasObject, dialog.Dialog, error) {
+	notifyResult := func(v bool) {
+		select {
+		case ch <- v:
+		default:
+		}
+	}
 
 	var (
 		wdg        fyne.CanvasObject
 		dg         dialog.Dialog
 		recoveryDg dialog.Dialog
 	)
+	mainCompleted := false
+	recoveryCompleted := false
 
-	onConfirm := func(keyName, pwd string) {
-		if err := ui.certService.LoadCerts(pwd); err != nil {
+	// onConfirm: called when user clicks Confirm in the decrypt dialog.
+	onConfirm := func(pwd string) {
+		if err := ui.keyService.LoadKey(keyName, pwd); err != nil {
 			ui.ShowNotification("Error", err.Error())
-			return
-		}
-		cert, err := ui.certService.GetCert(keyName)
-		if err != nil {
-			ui.ShowNotification("Error", err.Error())
-			return
-		}
-		ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(cert.Algo))
-		if err = ui.cryptoService.GetSrv().GetKeyManager().ImportKey(cert.Key, cert.Name); err != nil {
-			ui.ShowNotification("Error", fmt.Sprintf("error importing key: %s", err.Error()))
 			return
 		}
 		ui.ShowNotification("Success", "Key decrypted successfully")
+		mainCompleted = true
+		notifyResult(true)
 		dg.Hide()
-		ch <- true
 	}
 
+	// onForgotPwd: called when user clicks "Forgot Password?"
 	onForgotPwd := func() {
-		dg.Hide()
-
 		storedQuestion, err := ui.confService.GetConfig(keyName + "_recovery_question")
 		if err != nil || storedQuestion == "" {
-			ui.ShowNotification("Error", "No recovery question was set up for this key. Use File > Generate New Encryption Key instead.")
+			ui.ShowNotification("Error",
+				"No recovery question was set up for this key. Use File > Generate New Encryption Key instead.")
 			return
 		}
+
+		mainCompleted = true
+		dg.Hide()
 
 		answerWdg := widget.NewPasswordEntry()
 		answerWdg.SetPlaceHolder("Your answer")
 		newPwdWdg := widget.NewPasswordEntry()
+		newPwdWdg.SetPlaceHolder("New password (optional)")
 
 		recoveryContent := container.NewVBox(
 			widget.NewLabel(storedQuestion),
 			answerWdg,
-			widget.NewLabel("Enter a NEW password:"),
+			widget.NewLabel("Enter a NEW password (optional):"),
 			newPwdWdg,
 			widget.NewButton("Recover & Reset Password", func() {
-				time.Sleep(1 * time.Second) // Delay to deter interactive brute force
-
-				if answerWdg.Text == "" || newPwdWdg.Text == "" {
-					ui.ShowNotification("Error", "Answer and new password are required")
+				if answerWdg.Text == "" {
+					ui.ShowNotification("Error", "Answer is required")
 					return
 				}
-				encRawKeyStr, err := ui.confService.GetConfig(keyName + "_recovery")
-				if err != nil || encRawKeyStr == "" {
-					ui.ShowNotification("Error", "No recovery data found for this key")
+				// All recovery logic (brute-force delay included) lives in KeyService.
+				if err := ui.keyService.VerifyAndRecoverKey(keyName, answerWdg.Text, newPwdWdg.Text); err != nil {
+					ui.ShowNotification("Error", err.Error())
 					return
 				}
-				encRawKey, err := hex.DecodeString(encRawKeyStr)
-				if err != nil {
-					ui.ShowNotification("Error", "Invalid recovery payload format")
-					return
-				}
-				
-				saltStr, err := ui.confService.GetConfig(keyName + "_recovery_salt")
-				if err != nil || saltStr == "" {
-					// Fallback to static salt if missing (for backwards compatibility with previously generated keys)
-					saltStr = "ecnotes-static-salt-v1"
-				}
-
-				recoveryPwd := cryptoUtil.GenerateRecoveryPassword([]string{answerWdg.Text}, []byte(saltStr))
-				decryptedKey, err := cryptoUtil.DecryptMessage(encRawKey, recoveryPwd)
-				if err != nil {
-					ui.ShowNotification("Error", "Incorrect answer. Key could not be decrypted.")
-					return
-				}
-
-				algo, err := ui.confService.GetConfig(keyName + "_algo")
-				if err != nil || algo == "" {
-					algo = common.ENCRYPTION_ALGORITHM_AES_256_CBC
-				}
-
-				cert := model.EncKey{
-					Name: keyName,
-					Algo: algo,
-					Key:  decryptedKey,
-				}
-
-				_ = ui.certService.RemoveCert(keyName)
-				_ = ui.certService.AddCert(cert)
-
-				if err := ui.certService.SaveCerts(newPwdWdg.Text); err != nil {
-					ui.ShowNotification("Error", "Failed saving new cert store: "+err.Error())
-					return
-				}
-
-				ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(cert.Algo))
-				if err = ui.cryptoService.GetSrv().GetKeyManager().ImportKey(cert.Key, cert.Name); err != nil {
-					ui.ShowNotification("Error", "error importing recovered key: "+err.Error())
-					return
-				}
-
 				ui.ShowNotification("Success", "Key recovered & password reset successfully")
+				recoveryCompleted = true
+				notifyResult(true)
 				if recoveryDg != nil {
 					recoveryDg.Hide()
 				}
-				ch <- true
 			}),
 		)
 
 		recoveryDg = dialog.NewCustom("Password Recovery", "Cancel", recoveryContent, ui.w)
-		recoveryDg.Resize(fyne.NewSize(500, 300))
+		recoveryDg.SetOnClosed(func() {
+			if !recoveryCompleted {
+				notifyResult(false)
+			}
+		})
+		recoveryDg.Resize(fyne.NewSize(500, 280))
 		recoveryDg.Show()
 	}
 
-	// create the dialog's content
 	keyPasswordWdg := widget.NewPasswordEntry()
-	wdg = container.NewVBox(
+	
+	dialogItems := []fyne.CanvasObject{
 		widget.NewLabel("Enter the password to decrypt the key (if any)"),
 		keyPasswordWdg,
 		widget.NewButton("Confirm", func() {
-			onConfirm(keyName, keyPasswordWdg.Text)
+			onConfirm(keyPasswordWdg.Text)
 		}),
-		widget.NewButton("Forgot Password?", onForgotPwd),
-	)
+	}
+	
+	if ui.keyService.HasRecovery(keyName) {
+		dialogItems = append(dialogItems, widget.NewButton("Forgot Password?", onForgotPwd))
+	}
+	
+	wdg = container.NewVBox(dialogItems...)
 
-	dg = dialog.NewCustom(dgTitle, "", wdg, ui.w)
+	// Use a ghost-button-free modal popup for the startup dialog.
+	// dialog.NewCustom with an empty dismiss string still renders
+	// an invisible button frame (visible artifact). widget.NewModalPopUp
+	// gives us full content control with no built-in button bar.
+	popup := ui.newModalNoCancel(dgTitle, wdg)
+	popup.Show()
+
+	// Wrap in a thin dialog.Dialog adapter so callers can resize/show/hide uniformly.
+	dg = &noButtonDialog{popup: popup}
+	dg.SetOnClosed(func() {
+		if !mainCompleted {
+			notifyResult(false)
+		}
+	})
 	return wdg, dg, nil
 }
 
-// newCertDialog creates a widget to insert a new certificate
-// note: return both the widget and the dialog
+// newCertDialog builds the "Generate Encryption Key" dialog.
+// Key creation is delegated entirely to KeyService.GenerateKey.
 func (ui *MainWindowImpl) newCertDialog(
 	dgTitle string,
 	setDefaultKey bool,
-	isStartup bool,
+	isStartup bool, // false when opened from File menu; true when no keys exist
 	ch chan bool,
 ) (fyne.CanvasObject, dialog.Dialog, error) {
+	notifyResult := func(v bool) {
+		select {
+		case ch <- v:
+		default:
+		}
+	}
 
 	var (
 		wdg fyne.CanvasObject
 		dg  dialog.Dialog
 	)
+	completed := false
 
-	doReturn := func(ch chan bool, err error) {
-		if err != nil {
-			ui.ShowNotification("Error", err.Error())
-			return
-		}
-		ui.ShowNotification("Success", "Key encrypted successfully")
-		dg.Hide()
-		ch <- true
-	}
-
-	onConfirm := func(keyName, algo, pwd string, defKey bool, securityQuestion, securityAnswer string, ch chan bool) {
-		ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(algo))
-		// generate encryption key
-		decryptedKey, err := ui.cryptoService.GetSrv().GetKeyManager().GenerateKey()
-		if err != nil {
-			doReturn(ch, err)
-			return
-		}
-		// add the key to cert store
-		cert := model.EncKey{
-			Name: keyName,
-			Algo: algo,
-			Key:  decryptedKey,
-		}
-		if err := ui.certService.AddCert(cert); err != nil {
-			err = fmt.Errorf("error adding encryption key to cert store: %s", err.Error())
-			doReturn(ch, err)
-			return
-		}
-
-		// generate recovery key if question+answer were provided
-		if securityQuestion != "" && securityAnswer != "" {
-			salt, _ := cryptoUtil.SecureRandomStr(32)
-			recoveryPwd := cryptoUtil.GenerateRecoveryPassword([]string{securityAnswer}, []byte(salt))
-			encRawKey, _ := cryptoUtil.EncryptMessage(decryptedKey, recoveryPwd)
-			_ = ui.confService.SetConfig(keyName+"_recovery", hex.EncodeToString(encRawKey))
-			_ = ui.confService.SetConfig(keyName+"_recovery_question", securityQuestion)
-			_ = ui.confService.SetConfig(keyName+"_recovery_salt", salt)
-			_ = ui.confService.SetConfig(keyName+"_algo", algo)
-		}
-
-		if err := ui.certService.SaveCerts(pwd); err != nil {
-			err = fmt.Errorf("error saving encryption key to cert store: %s", err.Error())
-			doReturn(ch, err)
-			return
-		}
-		if defKey {
-			// set the key as the default key
-			if err := ui.confService.SetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME, cert.Name); err != nil {
-				err = fmt.Errorf("error setting default encryption key: %s", err.Error())
-				doReturn(ch, err)
-				return
-			}
-			if err = ui.confService.SaveConfig(); err != nil {
-				err = fmt.Errorf("error saving configuration: %s", err.Error())
-				doReturn(ch, err)
-				return
-			}
-		}
-		doReturn(ch, err)
-	}
-
-	// widget to add a key to the key store
 	keyNameWdg := widget.NewEntry()
-	if setDefaultKey {
+	if isStartup {
 		keyNameWdg.SetText("ecNotes")
 	}
-	// select widget with supported encryption algorithms
 	encAlgoWdg := widget.NewSelect(common.SUPPORTED_ENCRYPTION_ALGORITHMS, func(s string) {})
 	keyPasswordWdg := widget.NewPasswordEntry()
-	// add a checkbox to set the key as the default key
 	defaultKeyWdg := widget.NewCheck("Set as default key", func(b bool) {})
-	// don't allow to uncheck the default key if there is no key in the store
 	if setDefaultKey {
 		defaultKeyWdg.SetChecked(true)
 		defaultKeyWdg.Disable()
 	}
 
-	// security question: user picks one question, provides one answer
 	securityQuestions := []string{
 		"What is your childhood hero's name?",
 		"What is your first pet's name?",
@@ -717,13 +509,12 @@ func (ui *MainWindowImpl) newCertDialog(
 	securityAnswerWdg := widget.NewPasswordEntry()
 	securityAnswerWdg.SetPlaceHolder("Your answer")
 
-	// create the dialog's content
 	scrollContent := container.NewVBox(
 		widget.NewLabel("Enter a name for the key"),
 		keyNameWdg,
-		widget.NewLabel("Select encryption algorithm you want to use"),
+		widget.NewLabel("Select encryption algorithm"),
 		encAlgoWdg,
-		widget.NewLabel("Enter the password to encrypt the key (optional)"),
+		widget.NewLabel("Enter a password (optional — leave blank for auto-load at startup)"),
 		keyPasswordWdg,
 		widget.NewLabel("Password Recovery (Optional)"),
 		widget.NewLabel("Choose a security question:"),
@@ -741,43 +532,169 @@ func (ui *MainWindowImpl) newCertDialog(
 				return
 			}
 			if encAlgoWdg.Selected == "" {
-				ui.ShowNotification("Error", "please select an encryption algorithm")
+				ui.ShowNotification("Error", "Please select an encryption algorithm")
 				return
 			}
-			onConfirm(keyNameWdg.Text, encAlgoWdg.Selected, keyPasswordWdg.Text, setDefaultKey, securityQuestionWdg.Selected, securityAnswerWdg.Text, ch)
+
+			// Delegate entirely to KeyService — no crypto logic here.
+			if _, err := ui.keyService.GenerateKey(
+				keyNameWdg.Text,
+				encAlgoWdg.Selected,
+				keyPasswordWdg.Text,
+				defaultKeyWdg.Checked,
+				securityQuestionWdg.Selected,
+				securityAnswerWdg.Text,
+			); err != nil {
+				ui.ShowNotification("Error", err.Error())
+				return
+			}
+			ui.ShowNotification("Success", "Key generated successfully")
+			completed = true
+			notifyResult(true)
+			dg.Hide()
 		}),
 	)
 	wdg = container.NewScroll(scrollContent)
-
-	// dialog defaults
 	dg = dialog.NewCustom(dgTitle, "Cancel", wdg, ui.w)
+	dg.SetOnClosed(func() {
+		if !completed {
+			notifyResult(false)
+		}
+	})
 	return wdg, dg, nil
 }
 
-// createPasswordDialog creates a widget to generate a default certificate or load and decrypt the one from the key store
+// createPasswordDialog dispatches to the correct dialog based on keyAction.
 func (ui *MainWindowImpl) createPasswordDialog(keyAction common.EncryptionKeyAction, ch chan bool) {
+	notifyResult := func(v bool) {
+		select {
+		case ch <- v:
+		default:
+		}
+	}
 	switch keyAction {
 	case common.EncryptionKeyAction_Generate:
-		dgTitle := "Generate Encryption Key"
-		_, dg, _ := ui.newCertDialog(dgTitle, true, true, ch)
-		dg.Resize(fyne.NewSize(600, 500))
+		_, dg, _ := ui.newCertDialog("Generate Encryption Key", true, true, ch)
+		dg.Resize(fyne.NewSize(600, 650))
 		dg.Show()
-		return
 	case common.EncryptionKeyAction_Decrypt:
-		dgTitle := "Decrypt Encryption Key"
-		// get the default key name from the configuration
-		keyName, err := ui.confService.GetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME)
+		keyName, err := ui.getCurEncryptionKeyName()
 		if err != nil {
 			ui.ShowNotification(common.ERR_KEY_NOT_FOUND, err.Error())
+			notifyResult(false)
 			return
 		}
-		_, dg, _ := ui.loadCertDialog(keyName, dgTitle, ch)
+		_, dg, _ := ui.loadCertDialog(keyName, "Decrypt Encryption Key", ch)
 		dg.Resize(fyne.NewSize(500, 200))
 		dg.Show()
-		return
 	default:
-		err := errors.New("unknown key action")
-		ui.ShowNotification(common.ERR_UNKNOWN_KEY_ACTION, err.Error())
-		return
+		ui.ShowNotification(common.ERR_UNKNOWN_KEY_ACTION, "unknown key action")
+		notifyResult(false)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Window lifecycle
+// ──────────────────────────────────────────────────────────────────────────────
+
+// CreateWindow initialises the main application window.
+func (ui *MainWindowImpl) CreateWindow(title string, width, height float32, _ bool, options map[string]interface{}) {
+	ui.ParseDefaultOptions(options)
+	w := ui.app.NewWindow(title)
+	ui.AddWindow("main", w)
+	ui.w = w
+	if ui.windowAspect == common.WindowAspect_FullScreen {
+		w.SetFullScreen(true)
+	} else {
+		w.Resize(fyne.NewSize(width, height))
+	}
+	w.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
+		if e.Name == fyne.KeyF11 {
+			ui.ToggleFullScreen(w)
+		}
+	})
+
+	w.SetMainMenu(ui.createMainWindowMenu())
+	mainLayout := ui.createWindowContainer()
+	w.SetMaster()
+	w.Show()
+	_ = ui.createPasswordPopUp(w, mainLayout)
+	w.SetContent(mainLayout)
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Note list
+// ──────────────────────────────────────────────────────────────────────────────
+
+func (ui *MainWindowImpl) runNoteList() fyne.CanvasObject {
+	titles := ui.noteService.GetTitles()
+	if len(titles) == 0 {
+		_, err := ui.noteService.GetNotes()
+		if err != nil {
+			return &widget.Card{
+				Title:   "error",
+				Content: widget.NewLabel(err.Error()),
+			}
+		}
+		titles = ui.noteService.GetTitles()
+		if len(titles) == 0 {
+			ui.ShowNotification("", "Note list is empty")
+		}
+	}
+	return ui.createNoteList(titles)
+}
+
+func (ui *MainWindowImpl) createNoteList(titles []string) fyne.CanvasObject {
+	ui.titlesDataBinding = binding.BindStringList(&titles)
+	noteList := widget.NewListWithData(ui.titlesDataBinding,
+		func() fyne.CanvasObject { return widget.NewLabel("template") },
+		func(i binding.DataItem, o fyne.CanvasObject) {
+			o.(*widget.Label).Bind(i.(binding.String))
+		})
+
+	ui.AddWidget(common.WDG_NOTE_LIST, noteList)
+
+	noteList.OnSelected = func(lii widget.ListItemID) {
+		ui.selectedNoteID = ui.noteService.GetNoteIDFromTitle(titles[lii])
+		note, err := ui.noteService.GetNoteWithContent(ui.selectedNoteID)
+		if err != nil {
+			if err.Error() == "cipher: message authentication failed" {
+				ui.ShowNotification("", common.ERR_CANNOT_DECRYPT_MISSING_KEY)
+			} else {
+				ui.ShowNotification("", "Error getting note: "+err.Error())
+			}
+			return
+		}
+		ui.selectedNote = note
+		ui.GetObserver().Notify(
+			observer.EVENT_UPDATE_NOTE_WINDOW,
+			ui.selectedNote,
+			common.WindowMode_Edit,
+			common.WindowAction_Update)
+		ui.SetWindowVisibility(common.WIN_NOTE_DETAILS, true)
+	}
+
+	return noteList
+}
+
+// UpdateNoteListWidget is the observer listener that refreshes the note list
+// whenever note titles change.
+func (ui *MainWindowImpl) UpdateNoteListWidget() observer.Listener {
+	return observer.Listener{
+		OnNotify: func(titles interface{}, args ...interface{}) {
+			if titles == nil {
+				return
+			}
+			uiTitles, ok := titles.([]string)
+			if !ok {
+				log.Println("UpdateNoteList: invalid message value")
+				return
+			}
+			if ui.titlesDataBinding != nil {
+				if err := ui.titlesDataBinding.Set(uiTitles); err != nil {
+					log.Println("UpdateNoteList: error setting data:", err)
+				}
+			}
+		},
 	}
 }

@@ -63,11 +63,15 @@ func (s *nutsDBSuiteTest) TestCreateAndReadNote() {
 	}
 	// this is because when created, the note is encrypted and when read it is decrypted
 	newNote.Encrypted = false
+	newNote.EncKeyName = "testKey1" // update expected struct since CreateNote no longer mutates it
 	// get same note from db
 	note, err := noteService.GetNoteWithContent(newNote.ID)
 	if err != nil {
 		t.Error(err)
 	}
+	newNote.CreatedAt = note.CreatedAt // sync timestamps
+	newNote.UpdatedAt = note.UpdatedAt
+
 	newNote.Content = "This is your first note.\n\nYou can edit it by clicking on the title."
 	assert.Equal(t, newNote, note, "Note should be the same")
 }
@@ -108,6 +112,7 @@ func (s *nutsDBSuiteTest) TestUpdateDeleteNote() {
 	updatedNote.Content = newContent
 	// this is because when created or updated, the note is encrypted and when read it is decrypted
 	updatedNote.Encrypted = false
+	updatedNote.EncKeyName = "testKey1"
 	// get same note from db
 	updatedNoteFromDB, err := noteService.GetNoteWithContent(newID)
 	assert.NoError(t, err, "Error getting note with new content from db")

@@ -37,7 +37,7 @@ func main() {
 	}
 
 	// initialize logger
-	logger, err := setupLogger(configService)
+	logger, logFile, err := setupLogger(configService)
 	if err != nil {
 		fmt.Println("Error setting up logger:", err)
 		os.Exit(1)
@@ -59,7 +59,7 @@ func main() {
 	appCtx, cancel := context.WithCancel(context.Background())
 
 	logger.Info("Starting...")
-	setupCloseHandler(cancel, logger)
+	setupCloseHandler(cancel, logger, logFile)
 
 	// initialize external providers
 	// We run this in a goroutine so it doesn't block the UI
@@ -69,8 +69,11 @@ func main() {
 		}
 	}()
 
+	// wire key-lifecycle service (owns all crypto-key operations)
+	keyService := service.NewKeyService(certService, configService, cryptoService, noteService)
+
 	// create a new ui
-	appUI := ui.NewUI(app.NewWithID("ec-notes"), configService, noteService, certService, obs)
+	appUI := ui.NewUI(app.NewWithID("ec-notes"), configService, noteService, certService, keyService, obs)
 	mainWindow := ui.NewMainWindow(appUI, cryptoService)
 
 	// add listener to ui service to trigger note list widget update whenever the note title array changes
@@ -79,13 +82,9 @@ func main() {
 	// TODO: load some defaults from configuration?
 	emptyOptions := make(map[string]interface{})
 	mainWindow.CreateWindow("EcNotes", 600, 800, true, emptyOptions)
-	mainWindow.GetWindow().SetOnClosed(
-		func() {
-			quitChan := make(chan os.Signal, 1)
-			quitChan <- syscall.SIGQUIT
-			setupCloseHandler(cancel, logger) // this will trigger cleanup
-		},
-	)
+	mainWindow.GetWindow().SetOnClosed(func() {
+		cleanup(cancel, logger, logFile)
+	})
 	noteDetailWindow := ui.NewNoteDetailsWindow(appUI, new(model.Note))
 	// update note window when clicking on update note button
 	obs.AddListener(observer.EVENT_UPDATE_NOTE, noteDetailWindow.UpdateNoteDetailsWidget())
@@ -149,7 +148,7 @@ func setupDb(configService service.ConfigService, crypto service.CryptoServiceFa
 }
 
 // setupLogger setup logrus logger with config
-func setupLogger(configService service.ConfigService) (*log.Logger, error) {
+func setupLogger(configService service.ConfigService) (*log.Logger, *os.File, error) {
 	logger := log.New()
 	logger.SetFormatter(&log.TextFormatter{
 		DisableColors: true,
@@ -159,18 +158,18 @@ func setupLogger(configService service.ConfigService) (*log.Logger, error) {
 	// set log level according to config
 	level, err := configService.GetConfig(common.CONFIG_LOG_LEVEL)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	levelParsed, err := log.ParseLevel(level)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	logger.SetLevel(levelParsed)
 
 	// set logger path according to config
 	logPath, err := configService.GetConfig(common.CONFIG_LOG_FILE_PATH)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// if logpath directory does not exist, create it
 	// note that logPath is the file name, not the directory
@@ -178,17 +177,17 @@ func setupLogger(configService service.ConfigService) (*log.Logger, error) {
 	if _, err = os.Stat(logDir); os.IsNotExist(err) {
 		err = os.MkdirAll(logDir, 0755)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	logFile, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	mw := io.MultiWriter(os.Stdout, logFile)
 	logger.SetOutput(mw)
-	return logger, nil
+	return logger, logFile, nil
 }
 
 // setupProviders setup external providers
@@ -247,26 +246,26 @@ func setupProviders(ctx context.Context, configService service.ConfigService, no
 // setupCloseHandler creates a 'listener' on a new goroutine which will notify the
 // program if it receives an interrupt from the OS. We then handle this by calling
 // our clean up procedure and exiting the program.
-func setupCloseHandler(cancel context.CancelFunc, logger *log.Logger) {
+func setupCloseHandler(cancel context.CancelFunc, logger *log.Logger, logFile *os.File) {
 	quitSignalChan := make(chan os.Signal, 1)
 	signal.Notify(quitSignalChan, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)
 	go func() {
 		<-quitSignalChan
-		cancel()
-		cleanup(logger)
+		cleanup(cancel, logger, logFile)
 	}()
 }
 
-func cleanup(logger *log.Logger) {
+func cleanup(cancel context.CancelFunc, logger *log.Logger, logFile *os.File) {
 	if logger != nil {
 		logger.Info("Cleanup...")
-		// close logger file
-		if logFile, ok := logger.Out.(*os.File); ok {
-			if err := logFile.Close(); err != nil {
-				fmt.Println("Error closing log file:", err)
-			}
+	}
+	if cancel != nil {
+		cancel()
+	}
+	if logFile != nil {
+		if err := logFile.Close(); err != nil {
+			fmt.Println("Error closing log file:", err)
 		}
 	}
 	os.Exit(0)
 }
-
