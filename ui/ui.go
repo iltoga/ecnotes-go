@@ -29,6 +29,19 @@ type UI interface {
 }
 
 // UImpl Main ui configuration
+//
+// # Architecture contract
+//
+// UImpl (and all types that embed it) must remain a THIN UI layer.
+// Specifically:
+//   - UI files may only contain widget construction, layout, and event wiring.
+//   - Business logic, crypto operations, config mutations, and file-system
+//     access belong in a service or lib/util – never in a fyne callback.
+//   - When adding new functionality, add a method to the appropriate service
+//     (KeyService, NoteService, …) and call it from the UI callback.
+//   - The UI layer receives plain Go errors from services and decides how to
+//     surface them (ShowNotification, dialog, log). It must NOT interpret or
+//     reimplement domain logic.
 type UImpl struct {
 	app         fyne.App
 	windows     map[string]fyne.Window
@@ -38,6 +51,7 @@ type UImpl struct {
 	confService service.ConfigService
 	certService service.CertService
 	noteService service.NoteService
+	keyService  service.KeyService
 	obs         observer.Observer
 }
 
@@ -47,6 +61,7 @@ func NewUI(
 	confService service.ConfigService,
 	noteService service.NoteService,
 	certService service.CertService,
+	keyService service.KeyService,
 	obs observer.Observer,
 ) *UImpl {
 	return &UImpl{
@@ -58,6 +73,7 @@ func NewUI(
 		confService: confService,
 		noteService: noteService,
 		certService: certService,
+		keyService:  keyService,
 		obs:         obs,
 	}
 }
@@ -119,6 +135,11 @@ func (ui *UImpl) SetWindowVisibility(name string, visible bool) error {
 // GetNoteService ....
 func (ui *UImpl) GetNoteService() service.NoteService {
 	return ui.noteService
+}
+
+// GetKeyService returns the key-lifecycle service.
+func (ui *UImpl) GetKeyService() service.KeyService {
+	return ui.keyService
 }
 
 // GetObserver ....

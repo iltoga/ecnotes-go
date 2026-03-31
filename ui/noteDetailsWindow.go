@@ -312,7 +312,7 @@ func (ui *NoteDetailsWindowImpl) createFormWidget(w fyne.Window) fyne.CanvasObje
 	})
 	ui.AddWidget(common.BTN_DELETE, btnDelete)
 
-	btnCancel := widget.NewButton("Cancel", func() {
+	btnCancel := widget.NewButton("Close", func() {
 		ui.Close(true)
 	})
 	ui.AddWidget(common.BTN_CANCEL, btnCancel)
@@ -324,7 +324,8 @@ func (ui *NoteDetailsWindowImpl) createFormWidget(w fyne.Window) fyne.CanvasObje
 
 	btnCopyEncrypted := widget.NewButton("Copy Encrypted Note", func() {
 		// to not temper with the original note, we create a copy
-		tmpNote := ui.note
+		tmpNote := &model.Note{}
+		*tmpNote = *ui.note
 		// if note content is not encrypted, encrypt it and copy it to clipboard
 		if !ui.note.Encrypted {
 			if err := ui.noteService.EncryptNote(tmpNote); err != nil {
@@ -340,7 +341,8 @@ func (ui *NoteDetailsWindowImpl) createFormWidget(w fyne.Window) fyne.CanvasObje
 
 	btnPasteEncrypted := widget.NewButton("Paste Encrypted Note Content", func() {
 		// to not temper with the original note, we create a copy
-		note := ui.note
+		note := &model.Note{}
+		*note = *ui.note
 		// to not temper with the original note, we create a copy
 		note.Content = w.Clipboard().Content()
 		// decrypt the note
@@ -354,7 +356,7 @@ func (ui *NoteDetailsWindowImpl) createFormWidget(w fyne.Window) fyne.CanvasObje
 	ui.AddWidget(common.BTN_PASTE_ENCRYPTED, btnPasteEncrypted)
 
 	// create a button to toggle between the two content widgets
-	btnToggleContent := widget.NewButton("Toggle Content", func() {
+	btnToggleContent := widget.NewButton("Edit Note", func() {
 		if contentWidget.Visible() {
 			contentWidget.Hide()
 			contentWidgetRichText.Show()

@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/iltoga/ecnotes-go/lib/common"
@@ -12,6 +13,8 @@ import (
 	"github.com/iltoga/ecnotes-go/service"
 	"github.com/iltoga/ecnotes-go/service/observer"
 	toml "github.com/pelletier/go-toml"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -24,7 +27,7 @@ var (
 	}
 	aesKeyTest         = "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456"
 	aesKeyTestBytes, _ = hex.DecodeString(aesKeyTest)
-	aesKeyTestDec, _   = cryptoUtil.DecryptAES256(aesKeyTestBytes, []byte(aesKeyTest))
+	_, _               = cryptoUtil.DecryptAES256(aesKeyTestBytes, []byte(aesKeyTest))
 )
 
 type CertServiceMockImpl struct {
@@ -90,6 +93,46 @@ func (obmock *ObserverMockImpl) Remove(event observer.Event) {
 
 // Notify ....
 func (obmock *ObserverMockImpl) Notify(event observer.Event, data interface{}, args ...interface{}) {
+}
+
+type capturedNotification struct {
+	event observer.Event
+	data  interface{}
+	args  []interface{}
+}
+
+type capturingObserver struct {
+	mu     sync.Mutex
+	events []capturedNotification
+}
+
+func (co *capturingObserver) AddListener(event observer.Event, listener observer.Listener) {}
+func (co *capturingObserver) Remove(event observer.Event)                                  {}
+func (co *capturingObserver) Notify(event observer.Event, data interface{}, args ...interface{}) {
+	copiedArgs := append([]interface{}(nil), args...)
+	co.mu.Lock()
+	defer co.mu.Unlock()
+	co.events = append(co.events, capturedNotification{
+		event: event,
+		data:  data,
+		args:  copiedArgs,
+	})
+}
+
+func newTestNoteService(t *testing.T) (*service.NoteServiceImpl, *NoteRepositoryMockImpl) {
+	cryptoSrv := service.NewCryptoServiceAES(service.NewKeyManagementServiceAES())
+	require.NoError(t, cryptoSrv.GetKeyManager().ImportKey([]byte("1234567890123456"), "testKey1"))
+
+	repo := &NoteRepositoryMockImpl{}
+	obs := &capturingObserver{}
+	ns := &service.NoteServiceImpl{
+		NoteRepo: repo,
+		Observer:  obs,
+		Crypto: &service.CryptoServiceFactoryImpl{
+			Srv: cryptoSrv,
+		},
+	}
+	return ns, repo
 }
 
 // ConfigServiceMockImpl ....
@@ -187,6 +230,17 @@ func (nsr *NoteRepositoryMockImpl) DeleteNote(id int) error {
 	for i, n := range nsr.mockedNotes {
 		if n.ID == id {
 			nsr.mockedNotes = append(nsr.mockedNotes[:i], nsr.mockedNotes[i+1:]...)
+			return nil
+		}
+	}
+	return errors.New(common.ERR_NOTE_NOT_FOUND)
+}
+
+// RenameNote ....
+func (nsr *NoteRepositoryMockImpl) RenameNote(oldID int, note *model.Note) error {
+	for i, n := range nsr.mockedNotes {
+		if n.ID == oldID {
+			nsr.mockedNotes[i] = *note
 			return nil
 		}
 	}
@@ -335,6 +389,160 @@ func TestNoteServiceImpl_EncryptNote(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNoteServiceImpl_CreateNote_EmitsSeparateSnapshots(t *testing.T) {
+	ns, _ := newTestNoteService(t)
+	obs := ns.Observer.(*capturingObserver)
+
+	note := &model.Note{
+		ID:      100,
+		Title:   "Snapshot Note",
+		Content: "plain content",
+	}
+
+	require.NoError(t, ns.CreateNote(note))
+
+	obs.mu.Lock()
+	events := append([]capturedNotification(nil), obs.events...)
+	obs.mu.Unlock()
+
+	var createEvent *capturedNotification
+	for i := range events {
+		if events[i].event == observer.EVENT_CREATE_NOTE {
+			createEvent = &events[i]
+			break
+		}
+	}
+	require.NotNil(t, createEvent)
+
+	decNote, ok := createEvent.data.(*model.Note)
+	require.True(t, ok)
+	savedNote, ok := createEvent.args[2].(*model.Note)
+	require.True(t, ok)
+
+	assert.False(t, decNote.Encrypted)
+	assert.Equal(t, "plain content", decNote.Content)
+	assert.True(t, savedNote.Encrypted)
+	assert.NotEqual(t, "plain content", savedNote.Content)
+	assert.Equal(t, note.Title, decNote.Title)
+	assert.Equal(t, note.Title, savedNote.Title)
+}
+
+func TestNoteServiceImpl_UpdateNoteContent_And_GetNoteWithContent(t *testing.T) {
+	ns, _ := newTestNoteService(t)
+
+	note := &model.Note{
+		Title:   "Update Title",
+		Content: "Original content",
+	}
+	require.NoError(t, ns.CreateNote(note))
+
+	loaded, err := ns.GetNoteWithContent(note.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Original content", loaded.Content)
+	assert.False(t, loaded.Encrypted)
+
+	loaded.Content = "Updated content"
+	require.NoError(t, ns.UpdateNoteContent(loaded))
+
+	updated, err := ns.GetNoteWithContent(note.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Updated content", updated.Content)
+	assert.Equal(t, "Update Title", updated.Title)
+}
+
+func TestNoteServiceImpl_UpdateNoteTitle_RenamesAndUpdatesTitles(t *testing.T) {
+	ns, _ := newTestNoteService(t)
+
+	note := &model.Note{
+		Title:   "Old Title",
+		Content: "Some content",
+	}
+	require.NoError(t, ns.CreateNote(note))
+
+	newID, err := ns.UpdateNoteTitle("Old Title", "New Title")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, newID)
+
+	titles := ns.GetTitles()
+	assert.Contains(t, titles, "New Title")
+	assert.NotContains(t, titles, "Old Title")
+
+	updated, err := ns.GetNoteWithContent(newID)
+	require.NoError(t, err)
+	assert.Equal(t, "New Title", updated.Title)
+	assert.Equal(t, "Some content", updated.Content)
+}
+
+func TestNoteServiceImpl_DeleteNote_RemovesNoteAndTitle(t *testing.T) {
+	ns, repo := newTestNoteService(t)
+
+	note := &model.Note{
+		Title:   "Delete Me",
+		Content: "Some content",
+	}
+	require.NoError(t, ns.CreateNote(note))
+
+	require.NoError(t, ns.DeleteNote(note.ID))
+
+	titles := ns.GetTitles()
+	assert.NotContains(t, titles, "Delete Me")
+
+	exists, err := repo.NoteExists(note.ID)
+	require.NoError(t, err)
+	assert.False(t, exists)
+}
+
+func TestNoteServiceImpl_SaveEncryptedNotes_AppendsAndRefreshesTitles(t *testing.T) {
+	ns, _ := newTestNoteService(t)
+
+	notes := []model.Note{
+		{ID: 200, Title: "Batch One", Content: "content one"},
+		{ID: 201, Title: "Batch Two", Content: "content two"},
+	}
+
+	require.NoError(t, ns.SaveEncryptedNotes(notes))
+
+	titles := ns.GetTitles()
+	assert.Contains(t, titles, "Batch One")
+	assert.Contains(t, titles, "Batch Two")
+
+	saved, err := ns.GetNotes()
+	require.NoError(t, err)
+	assert.Len(t, saved, 2)
+}
+
+func TestNoteServiceImpl_ReEncryptNotes_MigratesEncryptedNotes(t *testing.T) {
+	ns, _ := newTestNoteService(t)
+
+	note := &model.Note{
+		Title:   "Rotate Me",
+		Content: "Top secret content",
+	}
+	require.NoError(t, ns.CreateNote(note))
+
+	encryptedNotes, err := ns.GetNotes()
+	require.NoError(t, err)
+	require.Len(t, encryptedNotes, 1)
+	oldEncryptedContent := encryptedNotes[0].Content
+
+	newCert := model.EncKey{
+		Name: "newKey",
+		Algo: common.ENCRYPTION_ALGORITHM_AES_256_CBC,
+		Key:  []byte("new-key-32-bytes-new-key-32-bytes"),
+	}
+	require.NoError(t, ns.ReEncryptNotes(encryptedNotes, newCert))
+
+	rotated, err := ns.GetNotes()
+	require.NoError(t, err)
+	require.Len(t, rotated, 1)
+	assert.Equal(t, "newKey", rotated[0].EncKeyName)
+	assert.NotEqual(t, oldEncryptedContent, rotated[0].Content)
+
+	decrypted, err := ns.GetNoteWithContent(note.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Top secret content", decrypted.Content)
 }
 
 // TestNoteServiceImpl_SearchNotes ....

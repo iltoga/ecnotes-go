@@ -86,6 +86,11 @@ const (
 
 	ENCRYPTION_ALGORITHM_AES_256_CBC = "aes-256-cbc"
 	ENCRYPTION_ALGORITHM_RSA_OAEP    = "rsa-oaep"
+
+	// RecoveryFallbackSalt is used when loading recovery payloads generated
+	// before per-key random salts were introduced (backwards compatibility only).
+	// Never use this for new keys – always generate a random salt via SecureRandomStr.
+	RecoveryFallbackSalt = "ecnotes-static-salt-v1"
 )
 
 var (

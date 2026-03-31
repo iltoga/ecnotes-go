@@ -15,7 +15,6 @@ import (
 )
 
 var (
-	enckey         = "d8fe4aa6f1579d7bf71f43da885947b25892d4015d89a08ce153d38a72567c4d04151525d1c43720bc578e2f2be3b5ba364eb571be6af7240d3929cc6d145a2bb4efb8b2fbd698b05e8962a6c2327ed931d97244aa301663290ee1fefdb4c217f6f4d21e090e228d19dfbecea2f6a69caa9190349c7a4e449e90de79e460220c2e3cc9fb99788d0b4e8a3fe527d1aa5bcb6a8fb791a596e549a5046a157ba6b1414493b8c678512ff2663120225371aabc52ea3b38e947754eeae58e730c8a9655b15152f9a37a22ab66fa3de1de16daeb9be652eb61f66907c0a7cc9f314754d36bea97cf71e97d0eb4d645f314b8e82188c4e7e9dffada184d75183cc4b85b3eec8bc95d36bf6dd3a37d01a3d47c248ec11429a3686d281ac6bb90"
 	decKey         = "HsNARwACWCF22HKtZEALH8YkvfFlOqvGnu1O0RVlJGA97nD5JtkEp0gpV6Pvb19zKdRtKbQ1dS1oVCGBdItpppwaS1za3yA3iidSay0TM1Rzda1tI6xsV3djwJpAKniQNZBej1Zvw6ltAB5v6yOUdRESjEqvLyuP2UUm6dJCdAGwBR2Su1UP9v19n5wmz9g8n8OGzNfAg3S6JX1cK5M7wDcncNUd2UUzNlYU242kS1bPUYT5Lfn4qq9d4LjieAZ6"
 	decKeyBytes, _ = hex.DecodeString(decKey)
 	obs            = observer.NewObserver()
@@ -147,9 +146,6 @@ func (nsr *NoteRepositoryMockImpl) GetAllNotes() ([]model.Note, error) {
 			return nil, err
 		}
 		nsr.mockedNotes[i].Content = hex.EncodeToString(eContent)
-		if err != nil {
-			return nil, err
-		}
 	}
 	nsr.mockedTitles = mocks.mockedTitles
 	obs.Notify(observer.EVENT_UPDATE_NOTE_TITLES, nsr.mockedTitles)
@@ -198,6 +194,18 @@ func (nsr *NoteRepositoryMockImpl) DeleteNote(id int) error {
 	return errors.New(common.ERR_NOTE_NOT_FOUND)
 }
 
+// RenameNote ....
+func (nsr *NoteRepositoryMockImpl) RenameNote(oldID int, note *model.Note) error {
+	for i, n := range nsr.mockedNotes {
+		n.ID = nsr.GetIDFromTitle(n.Title)
+		if n.ID == oldID {
+			nsr.mockedNotes[i] = *note
+			return nil
+		}
+	}
+	return errors.New(common.ERR_NOTE_NOT_FOUND)
+}
+
 // NoteExists ....
 func (nsr *NoteRepositoryMockImpl) NoteExists(id int) (bool, error) {
 	for _, note := range nsr.mockedNotes {
@@ -239,15 +247,19 @@ func main() {
 		Observer:      obs,
 	}
 
-	// create a new ui
-	testUI = ui.NewUI(app.NewWithID("testAPP"), configService, noteService, certService, obs)
-	// new crypto service
+	// crypto service (test uses a fixed AES key)
 	kms := service.NewKeyManagementServiceAES()
 	key, _ := hex.DecodeString(decKey)
 	kms.ImportKey(key, "testKey1")
 	cryptoServiceF := &service.CryptoServiceFactoryImpl{
 		Srv: service.NewCryptoServiceAES(kms),
 	}
+
+	// wire key-lifecycle service
+	keyService := service.NewKeyService(certService, configService, cryptoServiceF, noteService)
+
+	// create a new ui
+	testUI = ui.NewUI(app.NewWithID("testAPP"), configService, noteService, certService, keyService, obs)
 
 	mainWindow := ui.NewMainWindow(testUI, cryptoServiceF)
 
