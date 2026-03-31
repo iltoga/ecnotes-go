@@ -84,6 +84,7 @@ func (d *noButtonDialog) Resize(s fyne.Size)      { d.popup.Resize(s) }
 func (d *noButtonDialog) MinSize() fyne.Size      { return d.popup.MinSize() }
 func (d *noButtonDialog) SetDismissText(_ string) {} // no button — intentionally a no-op
 func (d *noButtonDialog) SetOnClosed(fn func())   { d.onClosed = fn }
+func (d *noButtonDialog) Dismiss()                { d.Hide() }
 
 // newModalNoCancel builds a modal popup with a title label and arbitrary content
 // but without any dismiss button. Returns the raw *widget.PopUp (for resize) and
@@ -432,7 +433,7 @@ func (ui *MainWindowImpl) loadCertDialog(
 	}
 
 	keyPasswordWdg := widget.NewPasswordEntry()
-	
+
 	dialogItems := []fyne.CanvasObject{
 		widget.NewLabel("Enter the password to decrypt the key (if any)"),
 		keyPasswordWdg,
@@ -440,11 +441,11 @@ func (ui *MainWindowImpl) loadCertDialog(
 			onConfirm(keyPasswordWdg.Text)
 		}),
 	}
-	
+
 	if ui.keyService.HasRecovery(keyName) {
 		dialogItems = append(dialogItems, widget.NewButton("Forgot Password?", onForgotPwd))
 	}
-	
+
 	wdg = container.NewVBox(dialogItems...)
 
 	// Use a ghost-button-free modal popup for the startup dialog.
