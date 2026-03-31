@@ -38,6 +38,7 @@ func (f *fakeApp) Lifecycle() fyne.Lifecycle               { return nil }
 func (f *fakeApp) Metadata() fyne.AppMetadata              { return fyne.AppMetadata{} }
 func (f *fakeApp) CloudProvider() fyne.CloudProvider       { return nil }
 func (f *fakeApp) SetCloudProvider(fyne.CloudProvider)     {}
+func (f *fakeApp) Clipboard() fyne.Clipboard                { return nil }
 
 var _ fyne.App = (*fakeApp)(nil)
 
