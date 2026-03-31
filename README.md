@@ -1,108 +1,176 @@
-
-# EcNotes (encrypted notes) 
+# <img src="Icon.png" width="40" height="40" align="center"> EcNotes
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
+[![Platform](https://img.shields.io/badge/Platform-Multi--platform-lightgrey.svg)](#installation)
 
-<img src="https://github.com/iltoga/ecnotes-go/blob/main/Icon.png" width="50" height="50">
+**EcNotes** is a high-security, privacy-focused desktop and mobile application designed to store and manage sensitive information such as passwords, crypto keys, and private notes. Built with **Go** and the **Fyne** GUI toolkit, it emphasizes local-first ownership of data and end-to-end encryption.
 
-Multi-platform gui app to store and manage encrypted notes. It can be used to store sensitive information such as passwords and crypto keys
+![EcNotes Main Window](screenshots/screenshot-01.png)
 
-EcNotes starts as a hobby project to get away some 'rust' from my golang programming while developing something useful.
-Through the years I've always been struggling to find a simple tool to store my passwords and other sensitive information that meets the following requirements:
+---
 
-- must be multiplatform: run on desktop and mobile as well
-- must be locally installed as a standalone GUI application: I don't want to rely on some third party-internet software or browser extension
-- must be able to sync **encrypted** data to some cloud storage/db services as an optional feature: this is required if I want to use the app on different systems/devices and retain all my data
-- must give me the ownership of my data: I want to be able to generate my own encryption key/s locally, save them where I want and storing or syncing with cloud services only encrypted content. meaning, the only time where my data are in clear text is inside the application and only for the piece of data I am actually accessing (single note)
-- would be nice if it allows to choose between different encryption algorithms
-- would be nice if it allows to manage external (public) keys or generate 'shared keys'\**: this would allow to exchange encrypted notes/messages with other people by using e2e encryption, without having to trust third parties. 
+## 🚀 Key Features
 
-\** For shared keys we could use elliptic-curve encryption to generate a shared secret, to be used as seed for a new AES key, for instance, by using [ECDH key exchange](https://cryptobook.nakov.com/asymmetric-key-ciphers/ecdh-key-exchange)
+- **🔐 End-to-End Encryption**: Choose between different encryption algorithms (AES, ECC). Data is only decrypted in memory during active access.
+- **📱 Multi-platform**: Native GUI application running on Linux, Windows, macOS, and Android.
+- **☁️ Optional Cloud Sync**: Securely synchronize your encrypted database with Google Sheets. Only encrypted content ever leaves your device.
+- **📂 Data Ownership**: You generate and manage your own encryption keys locally.
+- **🤝 Shared Keys**: (In Development) Support for ECDH key exchange to share encrypted notes securely with others.
 
-### INSTALLATION
-At the moment the only way to install EcNotes is to compile it (maybe in future I will provide executables for different platforms..).
-You will have to first install these dependencies:
-- go (tested on versions >= 1.17)
-- git
-- fyne commandline utility: instructions [here](https://developer.fyne.io/started/packaging)
+---
 
-#### PACKAGE ECNOTES (DISTRIBUTABLE)
-To package EcNotes (build the executable and installer package), go to the gooroot folder $GOROOT/src/github (usually ~/go/src/github) and create github dir if not present:
+## 🏗 Architecture
+
+EcNotes follows a modular, interface-driven architecture to ensure maintainability and security. The core principle is that **Cleartext never leaves the Service Layer**.
+
+### System Overview
+```mermaid
+graph TD
+    subgraph Client [Device]
+        UI[Fyne GUI] <--> Service[Note Service]
+        Service <--> Enc[Encryption Engine]
+        Service <--> Store[(Local SQLite/Files)]
+    end
+    
+    subgraph Sync [Cloud Synchronization]
+        Service <--> Observer[Observer Pattern]
+        Observer <--> Worker[Background Sync Worker]
+        Worker <--> Google[Google Sheets Provider]
+    end
+
+    Enc -.->|AES/ECC| Service
+    Service -.->|Encrypted Data Only| Store
+    Service -.->|Encrypted Data Only| Observer
 ```
-git clone git@github.com:iltoga/ecnotes-go.git
-cd ecnotes-go
 
-# native (for your running OS/platform):
+### Sync Sequence
+```mermaid
+sequenceDiagram
+    participant UI as User Interface
+    participant NS as Note Service
+    participant CR as Crypto Engine
+    participant GP as Google Provider
+    participant GS as Google Sheets
+
+    UI->>NS: Edit Note
+    NS->>CR: Encrypt Content
+    CR-->>NS: Ciphertext
+    NS->>NS: Save to Local DB
+    NS->>GP: Notify Change (Observer)
+    GP->>GP: Add to Sync Queue
+    loop Background Worker
+        GP->>GS: Update Row (Encrypted)
+    end
+    GS-->>GP: 200 OK
+```
+
+---
+
+## 📦 Installation
+
+To build and run EcNotes, you need **Go 1.21+** and the **Fyne** toolkit.
+
+### Dependencies
+- [Go](https://golang.org/doc/install)
+- [Fyne CLI](https://developer.fyne.io/started/packaging)
+
+### Local Development
+```bash
+git clone https://github.com/iltoga/ecnotes-go.git
+cd ecnotes-go
+go run main.go
+```
+
+### Packaging for Release
+Use the `fyne` utility to package the application for your specific OS:
+```bash
+# For your current platform
 fyne package -icon Icon.png
 
-# other os (read instructions on https://developer.fyne.io/started/packaging to install relative OS toolchains), eg:
-
-fyne package -os linux -icon Icon.png
+# For Windows
 fyne package -os windows -icon Icon.png
 ```
-Then you should be able to install the app with your OS packaging system.
 
-#### JUST BUILD AND INSTALL LOCALLY
-Go to the gooroot folder $GOROOT/src/github (usually ~/go/src/github) and create github dir if not present:
+---
+
+## 🛠 Local Development & Configuration
+
+EcNotes is designed to be "plug-and-play," but follows a specific hierarchy for configuration and data storage.
+
+### 1. Automatic Initialization
+When you run the application for the first time (`go run main.go`), it will automatically:
+- Create a configuration directory.
+- Generate a default `config.toml`.
+- Initialize a local encrypted database.
+
+### 2. Choosing Your Resource Path
+The application looks for a `resources` directory in two places:
+- **Local Mode**: Create a folder named `resources` in the project root. The app will store all config, logs, and databases there.
+- **System Mode (Default)**: If no local `resources` folder exists, the app defaults to `~/.config/ecnotes` (Linux/macOS).
+
+### 3. Required Files (Self-Generated)
+The following files are ignored by version control but are essential for the app. The app creates them automatically, but you should be aware of them:
+- `config.toml`: Main application settings.
+- `key_store.json`: Stores your encrypted master keys. **Never delete this unless you want to lose access to your notes!**
+- `db/kv_store`: The encrypted database file.
+
+### 4. Manual Configuration (Optional)
+If you need to change the default behavior (e.g., log levels or database paths), edit your `config.toml`:
+```toml
+log_level = "debug"
+kvdb_path = "resources/db/my_notes"
 ```
-git clone git@github.com:iltoga/ecnotes-go.git
-cd ecnotes-go
 
-fyne install -icon Icon.png
-```
+---
 
-\* alternatively you can just use ```go run .```  or ``` go build .``` to run or build the executable, without installing it into some other directory
+## ⚙️ External Providers
 
+### Google Sheets Sync
+EcNotes can use a Google Sheet as a secure, distributed database. 
 
+#### Setup Steps:
+1. **Google Console**: Create a project and Service Account at the [Google Developer Console](https://console.developers.google.com).
+2. **Credentials**: Download the Service Account JSON and save it to `#HOME/.config/ecnotes/providers/google/cred_serviceaccount.json`.
+3. **Format Sheet**: Create a new Google Sheet and add these headers to the first row:
+   `ID | Title | Content | Hidden | Encrypted | EncKeyName | CreatedAt | UpdatedAt`
+4. **Configure**: Add your Sheet ID to `config.toml` in `$HOME/.config/ecnotes/resources/`:
+   ```toml
+   google_sheet_id = "your_sheet_id_here"
+   ```
 
-### EXTERNAL PROVIDERS
-You can use these providers to extend functionalities of EcNotes:
-- Google
-- TODO: add others...
+---
 
-### Google
-With this provider you can sync (two-way) your ecnotes to a google sheet on your google account.
-This enables:
-- Database synchronization between multiple instances of EcNotes (eg. one on a linux desktop and another on an Android phone) via google sheet
-- Cloud backup service via google sheet 
+## 🛠 Development Standards
 
-#### Setting up your Google account
-To set up this provider you must first configure an app and service account* using Google Developer Console:
-https://console.developers.google.com
+This project adheres to strict Go development guidelines to ensure a robust and SECURE codebase:
 
-This article has an example on how to do it 
-- How to setup google api app and service account: "Authenticating with Google Sheets API" paragraph
-- How to create and share a google sheet with this service account: "Share your spreadsheet with" sub paragraph
+- **SOLID & DRY**: All logic is abstracted into services and repositories.
+- **Context-Aware**: All provider and IO calls respect `context.Context` for cancellation and timeouts.
+- **Dependency Injection**: Dependencies are injected via constructors to facilitate testing.
+- **Structured Logging**: Leveraging `logrus` for traceable application states.
 
-https://blog.coupler.io/how-to-use-google-sheets-as-database/#Exportimport_data_automatically_using_the_Google_Sheets_API
+For more details, see [GOLANG-GUIDELINES.md](./GOLANG-GUIDELINES.md).
 
-\* for now we only support authentication via 'service account' credentials, which doesn't require to authenticate your google app via web (oauth2) and requires to share your google sheet with the service account email that will be created during the procedure described in the article.
+---
 
-#### Format the google sheet
-Once you have set up your Google account and created and shared your google sheet, you have to format it by adding these column headers in the first row:
+## 🤝 How to Contribute
 
-| ID | Title | Content | Hidden | Encrypted | EncKeyName | CreatedAt | UpdatedAt |
-|----|-------|---------|--------|-----------|------------|-----------|-----------|
+We welcome contributions from the community! Whether it's fixing a bug, adding a new provider, or improving documentation.
 
-#### Configuring EcNotes with google account sync
-If you have followed the article and created the google account service, you've been asked to download the json file with the credentials to your computer. 
-Now run EcNotes at least once, so that creates the configuration directories and copy or move this file to your home directory (on linux 'echo #HOME' from a terminal to see where it is). Eg: 
-`mv whatever_credentials.json #HOME/.config/ecnotes/providers/google/cred_serviceaccount.json`
-<i>Please note that the file name (`cred_serviceaccount.json`) is important.</i>
+1. **Branching**: We use `main` for stable releases and `dev` for active development.
+2. **Workflow**:
+   - Fork the repository.
+   - Create a feature branch from `dev`.
+   - Ensure your code follows `go fmt`.
+   - Run tests: `go test ./...`.
+   - Submit a Pull Request to the `dev` branch.
+3. **Guidelines**: Please provide a clear description of your changes and link to any relevant issues.
 
-Last but not least is to get your google sheet ID and add it to EcNotes configuration:
-- copy the id from the sheet url (it looks something like this `1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms`)
-- Add this line into your `config.toml` file (that should be in `$HOME/.config/ecnotes/resources/`):
-	```toml
-	google_sheet_id = "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
-	```
-	don't forget to change the id with yours
-	
-### CONTRIBUTE
-	
-If you like this project and feel that something is missing, broken or can be improved, consider to contribute by joining it!
-There are two branches at the moment: 
-- main: master (stable) branch
-- dev: development (potentially unstable) branch
+---
 
-Please follow this guide on how to contribute on GitHub: https://www.dataschool.io/how-to-contribute-on-github/ and fork from dev branch to create a PR
+## 📄 License & Credits
+
+EcNotes is released under the **MIT License**. See [LICENSE](./LICENSE) for details.
+
+Developed with ❤️ by **iltoga** and contributors.

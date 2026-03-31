@@ -19,6 +19,7 @@ type NoteServiceRepository interface {
 	CreateNote(note *model.Note) error
 	UpdateNote(note *model.Note) error
 	DeleteNote(id int) error
+	RenameNote(oldID int, note *model.Note) error
 	NoteExists(id int) (bool, error)
 	GetIDFromTitle(title string) int
 }
@@ -150,6 +151,23 @@ func (nsr *NoteServiceRepositoryImpl) DeleteNote(id int) error {
 		func(tx *nutsdb.Tx) error {
 			key := nsr.getDBKeyFromID(id)
 			return tx.Delete(nsr.bucket, key)
+		})
+}
+
+// RenameNote handles removing the old note ID and inserting the new one transactionally
+func (nsr *NoteServiceRepositoryImpl) RenameNote(oldID int, note *model.Note) error {
+	var (
+		newKey     = nsr.getDBKeyFromID(note.ID)
+		oldKey     = nsr.getDBKeyFromID(oldID)
+		value, err = common.MarshalJSON(note)
+	)
+	if err != nil {
+		return err
+	}
+	return nsr.db.Update(
+		func(tx *nutsdb.Tx) error {
+			_ = tx.Delete(nsr.bucket, oldKey) // ignore error if old key happens to be gone
+			return tx.Put(nsr.bucket, newKey, value, 0)
 		})
 }
 

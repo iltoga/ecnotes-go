@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -160,6 +162,29 @@ func (ui *MainWindowImpl) createPasswordPopUp(w fyne.Window, c *fyne.Container) 
 	if nCerts, err := ui.certService.CountCerts(); err != nil || nCerts == 0 {
 		keyAction = common.EncryptionKeyAction_Generate
 	}
+
+	// If we need to decrypt, try passwordless auto-load first
+	if keyAction == common.EncryptionKeyAction_Decrypt {
+		keyName, err := ui.confService.GetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME)
+		if err == nil && keyName != "" {
+			if err := ui.certService.LoadCerts(""); err == nil {
+				cert, err := ui.certService.GetCert(keyName)
+				if err == nil {
+					ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(cert.Algo))
+					if err = ui.cryptoService.GetSrv().GetKeyManager().ImportKey(cert.Key, cert.Name); err == nil {
+						// Passwordless key loaded successfully — skip the dialog
+						go func() {
+							noteContainer := container.NewScroll(ui.runNoteList())
+							noteContainer.SetMinSize(w.Canvas().Size().Subtract(fyne.NewSize(100, 200)))
+							c.Add(noteContainer)
+						}()
+						return nil
+					}
+				}
+			}
+		}
+	}
+
 	ui.createPasswordDialog(keyAction, ch)
 
 	go func() {
@@ -297,7 +322,43 @@ func (ui *MainWindowImpl) createMainWindowMenu() *fyne.MainMenu {
 		},
 	}
 
-	menuItems := []*fyne.MenuItem{menuItemCopyEncKey, menuItemImportEncKey}
+	menuItemGenerateEncKey := &fyne.MenuItem{
+		Label: "Generate New Encryption Key",
+		Action: func() {
+			ch := make(chan bool)
+			dgTitle := "Generate New Encryption Key"
+			// Not a startup dialog, so don't exit on close
+			_, dg, _ := ui.newCertDialog(dgTitle, true, false, ch)
+			dg.Resize(fyne.NewSize(600, 500))
+			dg.Show()
+
+			go func() {
+				success := <-ch
+				if success {
+					keyName, err := ui.confService.GetConfig(common.CONFIG_CUR_ENCRYPTION_KEY_NAME)
+					if err != nil {
+						return
+					}
+					cert, err := ui.certService.GetCert(keyName)
+					if err != nil {
+						return
+					}
+					notes, err := ui.noteService.GetNotes()
+					if err != nil {
+						ui.ShowNotification("Error", "Error getting all notes: "+err.Error())
+						return
+					}
+					if err := ui.noteService.ReEncryptNotes(notes, *cert); err != nil {
+						ui.ShowNotification("Error", "Error re-encrypting notes: "+err.Error())
+						return
+					}
+					ui.ShowNotification("", "All notes have been successfully migrated to the new encryption key!")
+				}
+			}()
+		},
+	}
+
+	menuItems := []*fyne.MenuItem{menuItemCopyEncKey, menuItemImportEncKey, menuItemGenerateEncKey}
 	menu := &fyne.Menu{
 		Label: "File",
 		Items: menuItems,
@@ -424,73 +485,130 @@ func (ui *MainWindowImpl) loadCertDialog(
 ) (fyne.CanvasObject, dialog.Dialog, error) {
 
 	var (
-		wdg fyne.CanvasObject
-		dg  dialog.Dialog
-		// err     error
-		exitApp = true
+		wdg        fyne.CanvasObject
+		dg         dialog.Dialog
+		recoveryDg dialog.Dialog
 	)
 
-	doReturn := func(ch chan bool, err error) {
+	onConfirm := func(keyName, pwd string) {
+		if err := ui.certService.LoadCerts(pwd); err != nil {
+			ui.ShowNotification("Error", err.Error())
+			return
+		}
+		cert, err := ui.certService.GetCert(keyName)
 		if err != nil {
 			ui.ShowNotification("Error", err.Error())
-			dg.Hide()
+			return
+		}
+		ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(cert.Algo))
+		if err = ui.cryptoService.GetSrv().GetKeyManager().ImportKey(cert.Key, cert.Name); err != nil {
+			ui.ShowNotification("Error", fmt.Sprintf("error importing key: %s", err.Error()))
 			return
 		}
 		ui.ShowNotification("Success", "Key decrypted successfully")
-
-		exitApp = false
 		dg.Hide()
 		ch <- true
 	}
 
-	onConfirm := func(keyName, pwd string) {
-		// load all certs from the cert store
-		if err := ui.certService.LoadCerts(pwd); err != nil {
-			doReturn(ch, err)
+	onForgotPwd := func() {
+		dg.Hide()
+
+		storedQuestion, err := ui.confService.GetConfig(keyName + "_recovery_question")
+		if err != nil || storedQuestion == "" {
+			ui.ShowNotification("Error", "No recovery question was set up for this key. Use File > Generate New Encryption Key instead.")
 			return
 		}
-		// get default certificate from cert store
-		// Note: the default key name is set in the configuration and is the one that is used
-		// to encrypt/decrypt the notes by default
-		cert, err := ui.certService.GetCert(keyName)
-		if err != nil {
-			doReturn(ch, err)
-			return
-		}
-		// get algo from config file
-		ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(cert.Algo))
-		// import decrypted key to crypto service to validate it
-		if err = ui.cryptoService.GetSrv().GetKeyManager().ImportKey(cert.Key, cert.Name); err != nil {
-			err = fmt.Errorf("error importing key: %s", err.Error())
-			doReturn(ch, err)
-			return
-		}
-		doReturn(ch, err)
+
+		answerWdg := widget.NewPasswordEntry()
+		answerWdg.SetPlaceHolder("Your answer")
+		newPwdWdg := widget.NewPasswordEntry()
+
+		recoveryContent := container.NewVBox(
+			widget.NewLabel(storedQuestion),
+			answerWdg,
+			widget.NewLabel("Enter a NEW password:"),
+			newPwdWdg,
+			widget.NewButton("Recover & Reset Password", func() {
+				time.Sleep(1 * time.Second) // Delay to deter interactive brute force
+
+				if answerWdg.Text == "" || newPwdWdg.Text == "" {
+					ui.ShowNotification("Error", "Answer and new password are required")
+					return
+				}
+				encRawKeyStr, err := ui.confService.GetConfig(keyName + "_recovery")
+				if err != nil || encRawKeyStr == "" {
+					ui.ShowNotification("Error", "No recovery data found for this key")
+					return
+				}
+				encRawKey, err := hex.DecodeString(encRawKeyStr)
+				if err != nil {
+					ui.ShowNotification("Error", "Invalid recovery payload format")
+					return
+				}
+				
+				saltStr, err := ui.confService.GetConfig(keyName + "_recovery_salt")
+				if err != nil || saltStr == "" {
+					// Fallback to static salt if missing (for backwards compatibility with previously generated keys)
+					saltStr = "ecnotes-static-salt-v1"
+				}
+
+				recoveryPwd := cryptoUtil.GenerateRecoveryPassword([]string{answerWdg.Text}, []byte(saltStr))
+				decryptedKey, err := cryptoUtil.DecryptMessage(encRawKey, recoveryPwd)
+				if err != nil {
+					ui.ShowNotification("Error", "Incorrect answer. Key could not be decrypted.")
+					return
+				}
+
+				algo, err := ui.confService.GetConfig(keyName + "_algo")
+				if err != nil || algo == "" {
+					algo = common.ENCRYPTION_ALGORITHM_AES_256_CBC
+				}
+
+				cert := model.EncKey{
+					Name: keyName,
+					Algo: algo,
+					Key:  decryptedKey,
+				}
+
+				_ = ui.certService.RemoveCert(keyName)
+				_ = ui.certService.AddCert(cert)
+
+				if err := ui.certService.SaveCerts(newPwdWdg.Text); err != nil {
+					ui.ShowNotification("Error", "Failed saving new cert store: "+err.Error())
+					return
+				}
+
+				ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(cert.Algo))
+				if err = ui.cryptoService.GetSrv().GetKeyManager().ImportKey(cert.Key, cert.Name); err != nil {
+					ui.ShowNotification("Error", "error importing recovered key: "+err.Error())
+					return
+				}
+
+				ui.ShowNotification("Success", "Key recovered & password reset successfully")
+				if recoveryDg != nil {
+					recoveryDg.Hide()
+				}
+				ch <- true
+			}),
+		)
+
+		recoveryDg = dialog.NewCustom("Password Recovery", "Cancel", recoveryContent, ui.w)
+		recoveryDg.Resize(fyne.NewSize(500, 300))
+		recoveryDg.Show()
 	}
+
 	// create the dialog's content
 	keyPasswordWdg := widget.NewPasswordEntry()
-	wdg = container.NewBorder(
-		widget.NewLabel("Enter the password to decrypt the key"),
+	wdg = container.NewVBox(
+		widget.NewLabel("Enter the password to decrypt the key (if any)"),
+		keyPasswordWdg,
 		widget.NewButton("Confirm", func() {
-			// validate input fields first
-			if keyPasswordWdg.Text == "" {
-				ui.ShowNotification("Error", "password cannot be empty")
-				return
-			}
 			onConfirm(keyName, keyPasswordWdg.Text)
 		}),
-		nil, nil,
-		keyPasswordWdg,
+		widget.NewButton("Forgot Password?", onForgotPwd),
 	)
 
-	// dialog defaults
-	dg = dialog.NewCustom(dgTitle, "Cancel", wdg, ui.w)
-	dg.SetOnClosed(func() {
-		if exitApp {
-			ui.Stop()
-		}
-	})
-
+	dg = dialog.NewCustom(dgTitle, "", wdg, ui.w)
 	return wdg, dg, nil
 }
 
@@ -499,30 +617,26 @@ func (ui *MainWindowImpl) loadCertDialog(
 func (ui *MainWindowImpl) newCertDialog(
 	dgTitle string,
 	setDefaultKey bool,
+	isStartup bool,
 	ch chan bool,
 ) (fyne.CanvasObject, dialog.Dialog, error) {
 
 	var (
 		wdg fyne.CanvasObject
 		dg  dialog.Dialog
-		// err     error
-		exitApp = true
 	)
 
 	doReturn := func(ch chan bool, err error) {
 		if err != nil {
 			ui.ShowNotification("Error", err.Error())
-			dg.Hide()
 			return
 		}
 		ui.ShowNotification("Success", "Key encrypted successfully")
-
-		exitApp = false
 		dg.Hide()
 		ch <- true
 	}
 
-	onConfirm := func(keyName, algo, pwd string, defKey bool, ch chan bool) {
+	onConfirm := func(keyName, algo, pwd string, defKey bool, securityQuestion, securityAnswer string, ch chan bool) {
 		ui.cryptoService.SetSrv(service.NewCryptoServiceFactory(algo))
 		// generate encryption key
 		decryptedKey, err := ui.cryptoService.GetSrv().GetKeyManager().GenerateKey()
@@ -532,7 +646,6 @@ func (ui *MainWindowImpl) newCertDialog(
 		}
 		// add the key to cert store
 		cert := model.EncKey{
-			// generated key always has the same name
 			Name: keyName,
 			Algo: algo,
 			Key:  decryptedKey,
@@ -542,6 +655,18 @@ func (ui *MainWindowImpl) newCertDialog(
 			doReturn(ch, err)
 			return
 		}
+
+		// generate recovery key if question+answer were provided
+		if securityQuestion != "" && securityAnswer != "" {
+			salt, _ := cryptoUtil.SecureRandomStr(32)
+			recoveryPwd := cryptoUtil.GenerateRecoveryPassword([]string{securityAnswer}, []byte(salt))
+			encRawKey, _ := cryptoUtil.EncryptMessage(decryptedKey, recoveryPwd)
+			_ = ui.confService.SetConfig(keyName+"_recovery", hex.EncodeToString(encRawKey))
+			_ = ui.confService.SetConfig(keyName+"_recovery_question", securityQuestion)
+			_ = ui.confService.SetConfig(keyName+"_recovery_salt", salt)
+			_ = ui.confService.SetConfig(keyName+"_algo", algo)
+		}
+
 		if err := ui.certService.SaveCerts(pwd); err != nil {
 			err = fmt.Errorf("error saving encryption key to cert store: %s", err.Error())
 			doReturn(ch, err)
@@ -579,23 +704,38 @@ func (ui *MainWindowImpl) newCertDialog(
 		defaultKeyWdg.Disable()
 	}
 
+	// security question: user picks one question, provides one answer
+	securityQuestions := []string{
+		"What is your childhood hero's name?",
+		"What is your first pet's name?",
+		"In what city did you meet your spouse?",
+		"What was the name of your first school?",
+		"What is your mother's maiden name?",
+		"What was your childhood nickname?",
+	}
+	securityQuestionWdg := widget.NewSelect(securityQuestions, func(s string) {})
+	securityAnswerWdg := widget.NewPasswordEntry()
+	securityAnswerWdg.SetPlaceHolder("Your answer")
+
 	// create the dialog's content
-	wdg = container.NewVBox(
+	scrollContent := container.NewVBox(
 		widget.NewLabel("Enter a name for the key"),
 		keyNameWdg,
 		widget.NewLabel("Select encryption algorithm you want to use"),
 		encAlgoWdg,
-		widget.NewLabel("Enter the password to encrypt the key"),
+		widget.NewLabel("Enter the password to encrypt the key (optional)"),
 		keyPasswordWdg,
+		widget.NewLabel("Password Recovery (Optional)"),
+		widget.NewLabel("Choose a security question:"),
+		securityQuestionWdg,
+		securityAnswerWdg,
 		widget.NewLabel(
-			"Attention!\n"+
-				"keep the password in mind or write it down and put it in a safe place.\n"+
-				"If you lose it the only way to read your notes will be\n"+
-				"to brute force the encrypted key ;)",
+			"Note: Password is optional.\n"+
+				"Without a password, the key loads automatically at startup.\n"+
+				"With a password, you can recover using the security question above.",
 		),
 		defaultKeyWdg,
 		widget.NewButton("Confirm", func() {
-			// validate input fields first
 			if keyNameWdg.Text == "" {
 				ui.ShowNotification("Error", "Key name is required")
 				return
@@ -604,22 +744,13 @@ func (ui *MainWindowImpl) newCertDialog(
 				ui.ShowNotification("Error", "please select an encryption algorithm")
 				return
 			}
-			if keyPasswordWdg.Text == "" {
-				ui.ShowNotification("Error", "password cannot be empty")
-				return
-			}
-			onConfirm(keyNameWdg.Text, encAlgoWdg.Selected, keyPasswordWdg.Text, setDefaultKey, ch)
+			onConfirm(keyNameWdg.Text, encAlgoWdg.Selected, keyPasswordWdg.Text, setDefaultKey, securityQuestionWdg.Selected, securityAnswerWdg.Text, ch)
 		}),
 	)
+	wdg = container.NewScroll(scrollContent)
 
 	// dialog defaults
 	dg = dialog.NewCustom(dgTitle, "Cancel", wdg, ui.w)
-	dg.SetOnClosed(func() {
-		if exitApp {
-			ui.Stop()
-		}
-	})
-
 	return wdg, dg, nil
 }
 
@@ -628,8 +759,8 @@ func (ui *MainWindowImpl) createPasswordDialog(keyAction common.EncryptionKeyAct
 	switch keyAction {
 	case common.EncryptionKeyAction_Generate:
 		dgTitle := "Generate Encryption Key"
-		_, dg, _ := ui.newCertDialog(dgTitle, true, ch)
-		dg.Resize(fyne.NewSize(500, 200))
+		_, dg, _ := ui.newCertDialog(dgTitle, true, true, ch)
+		dg.Resize(fyne.NewSize(600, 500))
 		dg.Show()
 		return
 	case common.EncryptionKeyAction_Decrypt:

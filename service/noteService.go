@@ -104,7 +104,7 @@ func (ns *NoteServiceImpl) GetTitles() []string {
 // SearchNotes ....
 func (ns *NoteServiceImpl) SearchNotes(query string, fuzzySearch bool) ([]string, error) {
 	// get all notes if Titles is empty
-	if ns.Titles == nil || len(ns.Titles) == 0 {
+	if len(ns.Titles) == 0 {
 		_, err := ns.GetNotes()
 		if err != nil {
 			return nil, err
@@ -181,44 +181,53 @@ func (ns *NoteServiceImpl) ReEncryptNotes(notes []model.Note, cert model.EncKey)
 	return nil
 }
 
-// CreateNote ....
+// processAndSave centralizes decryption, snapshotting, encryption, and repo saving
+func (ns *NoteServiceImpl) processAndSave(note *model.Note, action func(*model.Note) error) (*model.Note, error) {
+	if note.Encrypted {
+		if err := ns.DecryptNote(note); err != nil {
+			return nil, err
+		}
+	}
+	oldContent := note.Content
+	if err := ns.EncryptNote(note); err != nil {
+		return nil, err
+	}
+	if err := action(note); err != nil {
+		return nil, err
+	}
+	// always return unencrypted content after saving
+	decNote := *note
+	decNote.Content = oldContent
+	decNote.Encrypted = false
+	return &decNote, nil
+}
+
+// emitNoteChanged triggers the notification for the UI observer
+func (ns *NoteServiceImpl) emitNoteChanged(event observer.Event, decNote *model.Note, origNote *model.Note) {
+	ns.Observer.Notify(event, *decNote, common.WindowMode_Edit, common.WindowAction_Update, origNote)
+}
+
+// CreateNote adds a new note to the repo
 func (ns *NoteServiceImpl) CreateNote(note *model.Note) error {
 	if note.Title == "" || note.Content == "" {
 		return errors.New(common.ERR_NOTE_EMPTY)
 	}
-	// generate a new note ID if the note has no ID
 	if note.ID == 0 {
 		note.ID = ns.NoteRepo.GetIDFromTitle(note.Title)
 	}
-	// make sure the note ID is unique
 	if exists, _ := ns.NoteRepo.NoteExists(note.ID); exists {
 		return errors.New(common.ERR_NOTE_ALREADY_EXISTS)
 	}
 	note.CreatedAt = common.GetCurrentTimestamp()
 	note.UpdatedAt = common.GetCurrentTimestamp()
-	// add note title to titles array
+
 	ns.Titles = append(ns.Titles, note.Title)
-	// emit a note titles' update event that will update the note titles in the UI (main window)
 	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
 
-	// if note is encrypted, decrypt content before saving to db, to be able to present unencrypted content in the UI
-	// after saving the note to db
-	if note.Encrypted {
-		if err := ns.DecryptNote(note); err != nil {
-			return err
-		}
+	decNote, err := ns.processAndSave(note, ns.NoteRepo.CreateNote)
+	if err == nil {
+		ns.emitNoteChanged(observer.EVENT_CREATE_NOTE, decNote, note)
 	}
-	oldContent := note.Content
-	if err := ns.EncryptNote(note); err != nil {
-		return err
-	}
-	err := ns.NoteRepo.CreateNote(note)
-	// notify both the unencrypted and the encrypted note
-	decNote := *note
-	decNote.Content = oldContent
-	decNote.Encrypted = false
-	// emit a note created event that will update the note details in the UI (note details window)
-	ns.Observer.Notify(observer.EVENT_CREATE_NOTE, decNote, common.WindowMode_Edit, common.WindowAction_Update, note)
 	return err
 }
 
@@ -227,39 +236,21 @@ func (ns *NoteServiceImpl) UpdateNoteContent(note *model.Note) error {
 	if note.Title == "" || note.Content == "" || note.ID == 0 {
 		return errors.New(common.ERR_NOTE_EMPTY)
 	}
-	// make sure the note already exists since we are updating the content
 	if ok, err := ns.NoteRepo.NoteExists(note.ID); err != nil {
 		return err
 	} else if !ok {
 		return errors.New(common.ERR_NOTE_NOT_FOUND)
 	}
 	note.UpdatedAt = common.GetCurrentTimestamp()
-	// if note is encrypted, decrypt content before saving to db, to be able to present unencrypted content in the UI
-	// after saving the note to db
-	if note.Encrypted {
-		if err := ns.DecryptNote(note); err != nil {
-			return err
-		}
-	}
-	oldContent := note.Content
-	if err := ns.EncryptNote(note); err != nil {
-		return err
-	}
-	err := ns.NoteRepo.UpdateNote(note)
-	// TODO: maybe refactor Crete/Update note to encrypt content but return the original (unencrypted) content
-	// this is to avoid showing the note content encrypted in the UI
-	decNote := *note
-	decNote.Content = oldContent
-	decNote.Encrypted = false
 
-	// emit a note created event that will update the note details in the UI (note details window)
-	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE, decNote, common.WindowMode_Edit, common.WindowAction_Update, note)
+	decNote, err := ns.processAndSave(note, ns.NoteRepo.UpdateNote)
+	if err == nil {
+		ns.emitNoteChanged(observer.EVENT_UPDATE_NOTE, decNote, note)
+	}
 	return err
 }
 
 // UpdateNoteTitle update the title of an existing UpdateNote
-// since the title is used as a key in db we need to delete the old note and create a new one
-// the new note is a copy of the old note with the new title
 func (ns *NoteServiceImpl) UpdateNoteTitle(oldTitle, newTitle string) (noteID int, err error) {
 	oldIndex := ns.NoteRepo.GetIDFromTitle(oldTitle)
 	noteID = oldIndex
@@ -267,12 +258,10 @@ func (ns *NoteServiceImpl) UpdateNoteTitle(oldTitle, newTitle string) (noteID in
 		err = errors.New(common.ERR_NOTE_TITLE_EMPTY)
 		return
 	}
-	// if oldTitle is empty or same as newTitle, it means that title hasn't been changed.	so we can just update the note content
 	if oldTitle == "" || newTitle == oldTitle {
 		return
 	}
 
-	// make sure the note already exists since we are updating the content
 	var ok bool
 	if ok, err = ns.NoteRepo.NoteExists(oldIndex); err != nil {
 		return
@@ -290,28 +279,13 @@ func (ns *NoteServiceImpl) UpdateNoteTitle(oldTitle, newTitle string) (noteID in
 	note.ID = newIndex
 	note.UpdatedAt = common.GetCurrentTimestamp()
 
-	// TODO: wrap this block in a transaction
-	if err = ns.NoteRepo.DeleteNote(oldIndex); err != nil {
-		return
-	}
-	// if note is encrypted, decrypt content before saving to db, to be able to present unencrypted content in the UI
-	// after saving the note to db
-	if note.Encrypted {
-		if err = ns.DecryptNote(note); err != nil {
-			return
-		}
-	}
-	oldContent := note.Content
-	if err = ns.EncryptNote(note); err != nil {
-		return
-	}
-	if err = ns.NoteRepo.CreateNote(note); err != nil {
-		return
+	_, err = ns.processAndSave(note, func(n *model.Note) error {
+		return ns.NoteRepo.RenameNote(oldIndex, n)
+	})
+	if err != nil {
+		return noteID, err
 	}
 	noteID = newIndex
-	// always return unencrypted content after saving
-	note.Content = oldContent
-	note.Encrypted = false
 
 	// update titles array
 	for i, title := range ns.Titles {
@@ -320,10 +294,8 @@ func (ns *NoteServiceImpl) UpdateNoteTitle(oldTitle, newTitle string) (noteID in
 			break
 		}
 	}
-	// emit a note titles' update event
 	ns.Observer.Notify(observer.EVENT_UPDATE_NOTE_TITLES, ns.Titles)
-	// Note: this time no need to emit a note updated event since everytime we update a note title, we also update the note content
-	return
+	return noteID, nil
 }
 
 // DeleteNote ....

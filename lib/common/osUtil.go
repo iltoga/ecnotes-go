@@ -9,7 +9,7 @@ import (
 func GetUserHomeDir() string {
 	user, err := user.Current()
 	if err != nil {
-		log.Fatalf(err.Error())
+		log.Fatal(err)
 	}
 	return user.HomeDir
 }

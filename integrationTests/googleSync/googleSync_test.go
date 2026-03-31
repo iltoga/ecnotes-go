@@ -1,6 +1,7 @@
 package googleSync_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -258,7 +259,7 @@ func (s *googleSyncTest) TestSyncNotes() {
 	// combine new notes and defaultNotes
 	dbNotes := append(defaultNotes, newNotes...)
 	// sync notes and assert it
-	_, err := gp.SyncNotes(dbNotes)
+	_, err := gp.SyncNotes(context.Background(), dbNotes)
 	assert.Nil(t, err)
 	// read and print all notes
 	notes, err := gp.GetNotes()

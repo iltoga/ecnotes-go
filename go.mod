@@ -1,6 +1,6 @@
 module github.com/iltoga/ecnotes-go
 
-go 1.17
+go 1.25.0
 
 require (
 	fyne.io/fyne/v2 v2.3.1
@@ -9,7 +9,7 @@ require (
 	github.com/sirupsen/logrus v1.9.0
 	github.com/stretchr/testify v1.8.1
 	github.com/xujiajun/nutsdb v0.11.1
-	golang.org/x/crypto v0.6.0
+	golang.org/x/crypto v0.49.0
 	golang.org/x/oauth2 v0.5.0
 	google.golang.org/api v0.110.0
 )
@@ -49,9 +49,9 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/image v0.5.0 // indirect
 	golang.org/x/mobile v0.0.0-20221110043201-43a038452099 // indirect
-	golang.org/x/net v0.7.0 // indirect
-	golang.org/x/sys v0.5.0 // indirect
-	golang.org/x/text v0.7.0 // indirect
+	golang.org/x/net v0.51.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20230216225411-c8e22ba71e44 // indirect
 	google.golang.org/grpc v1.53.0 // indirect

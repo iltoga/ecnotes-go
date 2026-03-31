@@ -198,6 +198,18 @@ func (nsr *NoteRepositoryMockImpl) DeleteNote(id int) error {
 	return errors.New(common.ERR_NOTE_NOT_FOUND)
 }
 
+// RenameNote ....
+func (nsr *NoteRepositoryMockImpl) RenameNote(oldID int, note *model.Note) error {
+	for i, n := range nsr.mockedNotes {
+		n.ID = nsr.GetIDFromTitle(n.Title)
+		if n.ID == oldID {
+			nsr.mockedNotes[i] = *note
+			return nil
+		}
+	}
+	return errors.New(common.ERR_NOTE_NOT_FOUND)
+}
+
 // NoteExists ....
 func (nsr *NoteRepositoryMockImpl) NoteExists(id int) (bool, error) {
 	for _, note := range nsr.mockedNotes {

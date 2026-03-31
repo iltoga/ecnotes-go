@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sync"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -29,6 +30,8 @@ type GoogleProvider struct {
 	notesUpdatedAt map[int]int64
 	idsMux         *sync.RWMutex
 	updAtMux       *sync.RWMutex
+	updateQueue    chan *model.Note
+	deleteQueue    chan int
 	ctx            context.Context
 	logger         *log.Logger
 	observer       observer.Observer
@@ -50,6 +53,8 @@ func NewGoogleProvider(
 		notesUpdatedAt: make(map[int]int64),
 		idsMux:         &sync.RWMutex{},
 		updAtMux:       &sync.RWMutex{},
+		updateQueue:    make(chan *model.Note, 100),
+		deleteQueue:    make(chan int, 100),
 		logger:         logger,
 		observer:       observer,
 	}
@@ -110,9 +115,11 @@ func (gp *GoogleProvider) CacheUpdAtUnset(noteID int) {
 // GetNotes fetch from the provider notes with given id or all if no ids is given
 func (gp *GoogleProvider) GetNotes(ids ...int) ([]model.Note, error) {
 	readRange := fmt.Sprintf("%s!A2:H", gp.sheetName)
-	resp, err := gp.sheetsService.Spreadsheets.Values.Get(gp.sheetID, readRange).Do()
+	ctx, cancel := context.WithTimeout(gp.ctx, 10*time.Second)
+	defer cancel()
+	resp, err := gp.sheetsService.Spreadsheets.Values.Get(gp.sheetID, readRange).Context(ctx).Do()
 	if err != nil {
-		log.Fatalf("Unable to retrieve data from sheet: %v", err)
+		return nil, fmt.Errorf("unable to retrieve data from sheet: %w", err)
 	}
 
 	notes := make([]model.Note, 0)
@@ -154,14 +161,16 @@ func (gp *GoogleProvider) GetNoteIDs(forceRemote bool) (map[int]int, error) {
 	if len(gp.noteIds) > 0 && !forceRemote {
 		return gp.noteIds, nil
 	}
+	ctx, cancel := context.WithTimeout(gp.ctx, 10*time.Second)
+	defer cancel()
 	// range used to read note IDs and UpdatedAt fields from the sheet
 	readRangeID := fmt.Sprintf("%s!A2:A", gp.sheetName)
-	respGetIDs, err := gp.sheetsService.Spreadsheets.Values.Get(gp.sheetID, readRangeID).Do()
+	respGetIDs, err := gp.sheetsService.Spreadsheets.Values.Get(gp.sheetID, readRangeID).Context(ctx).Do()
 	if err != nil {
 		return nil, err
 	}
 	readRangeUpdAt := fmt.Sprintf("%s!G2:G", gp.sheetName)
-	respGetUpdAt, err := gp.sheetsService.Spreadsheets.Values.Get(gp.sheetID, readRangeUpdAt).Do()
+	respGetUpdAt, err := gp.sheetsService.Spreadsheets.Values.Get(gp.sheetID, readRangeUpdAt).Context(ctx).Do()
 	if err != nil {
 		return nil, err
 	}
@@ -201,9 +210,11 @@ func (gp *GoogleProvider) GetNote(id int) (*model.Note, error) {
 		return nil, errors.New(common.ERR_NOTE_NOT_FOUND)
 	}
 	noteIDx += 2 // add 2 to the index to get the correct row
+	ctx, cancel := context.WithTimeout(gp.ctx, 10*time.Second)
+	defer cancel()
 	readRangeRow := fmt.Sprintf("%s!A%d:H%d", gp.sheetName, noteIDx, noteIDx)
 	// read the note from sheet in readRangeRow
-	respGetNote, err := gp.sheetsService.Spreadsheets.Values.Get(gp.sheetID, readRangeRow).Do()
+	respGetNote, err := gp.sheetsService.Spreadsheets.Values.Get(gp.sheetID, readRangeRow).Context(ctx).Do()
 	if err != nil {
 		return nil, err
 	}
@@ -243,9 +254,11 @@ func (gp *GoogleProvider) PutNote(note *model.Note) error {
 	values := [][]interface{}{
 		{note.ID, note.Title, note.Content, note.Hidden, note.Encrypted, note.EncKeyName, note.CreatedAt, note.UpdatedAt},
 	}
+	ctx, cancel := context.WithTimeout(gp.ctx, 10*time.Second)
+	defer cancel()
 	_, err := gp.sheetsService.Spreadsheets.Values.Update(gp.sheetID, writeRange, &sheets.ValueRange{
 		Values: values,
-	}).Context(gp.ctx).ValueInputOption("USER_ENTERED").Do()
+	}).Context(ctx).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
 		return err
 	}
@@ -268,9 +281,11 @@ func (gp *GoogleProvider) DeleteNote(id int) error {
 	}
 	noteIDx += 2 // add 2 to the index to get the correct row
 	// delete the row from the sheet
+	ctx, cancel := context.WithTimeout(gp.ctx, 10*time.Second)
+	defer cancel()
 	deleteRange := fmt.Sprintf("%s!A%d:H%d", gp.sheetName, noteIDx, noteIDx)
 	_, err := gp.sheetsService.Spreadsheets.Values.Clear(gp.sheetID, deleteRange, &sheets.ClearValuesRequest{}).
-		Context(gp.ctx).
+		Context(ctx).
 		Do()
 	if err != nil {
 		return err
@@ -283,7 +298,7 @@ func (gp *GoogleProvider) DeleteNote(id int) error {
 // SyncNotes syncs the notes from the provider to the local database and vice versa
 // to correctly sync, we need to get all note ID (columb A of the sheet) and UpdatedAt fields (column G of the sheet) from the provider, then we need to get all notes from the local database, then we need to compare the two lists and sync the notes
 // return the notes to be added to the local database
-func (gp *GoogleProvider) SyncNotes(dbNotes []model.Note) (downloaded []model.Note, err error) {
+func (gp *GoogleProvider) SyncNotes(syncCtx context.Context, dbNotes []model.Note) (downloaded []model.Note, err error) {
 	// get ids and updated at from the provider
 	noteIds, err := gp.GetNoteIDs(true)
 	if err != nil {
@@ -433,10 +448,11 @@ func (gp *GoogleProvider) UpdateNoteNotifier() observer.Listener {
 				return
 			}
 
-			// put the note in the provider
-			err := gp.PutNote(n)
-			if err != nil {
-				gp.logger.Errorf("Error pushing note to google sheets: %v", err)
+			// Add note to update queue instead of pulling synchronously
+			select {
+			case gp.updateQueue <- n:
+			default:
+				gp.logger.Warn("Update queue full, dropping Google Sheet sync for note ID", n.ID)
 			}
 		},
 	}
@@ -455,11 +471,34 @@ func (gp *GoogleProvider) DeleteNoteNotifier() observer.Listener {
 				return
 			}
 
-			// delete the note from the provider
-			err := gp.DeleteNote(n.ID)
-			if err != nil {
-				gp.logger.Errorf("Error deleting from google sheets: %v", err)
+			// add the note ID to the delete queue
+			select {
+			case gp.deleteQueue <- n.ID:
+			default:
+				gp.logger.Warn("Delete queue full, dropping Google Sheet sync for note ID", n.ID)
 			}
 		},
 	}
+}
+
+// InitWorker starts a background worker that processes sync queues
+func (gp *GoogleProvider) InitWorker(ctx context.Context) {
+	go func() {
+		gp.logger.Info("Starting Google Sheets sync worker")
+		for {
+			select {
+			case <-ctx.Done():
+				gp.logger.Info("Shutting down Google Sheets sync worker")
+				return
+			case note := <-gp.updateQueue:
+				if err := gp.PutNote(note); err != nil {
+					gp.logger.Errorf("Worker error pushing note to google sheets (ID %d): %v", note.ID, err)
+				}
+			case id := <-gp.deleteQueue:
+				if err := gp.DeleteNote(id); err != nil {
+					gp.logger.Errorf("Worker error deleting from google sheets (ID %d): %v", id, err)
+				}
+			}
+		}
+	}()
 }
